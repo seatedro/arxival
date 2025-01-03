@@ -1,96 +1,87 @@
-from dataclasses import dataclass
-from typing import List, Optional, Dict
-import logging
+import os
 import re
+import logging
 import pymupdf4llm
+from typing import List, Optional
+from ingestion.models import PaperChunk
+from ingestion.section import Section, SectionExtractor
+from openai import OpenAI
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-@dataclass
-class PaperChunk:
-    """A chunk of paper content with its metadata"""
-    text: str
-    section: Optional[str]
-    chunk_id: str
-    metadata: Dict = None
+TEI_SERVER = os.getenv("TEI_SERVER") or "http://localhost:8000"
+TEI_TOKEN = os.getenv("TEI_TOKEN") or "dummy_token"
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY") or "dummy_token"
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or "dummy_token"
+CHROMADB_TOKEN = os.getenv("CHROMADB_TOKEN") or "dummy"
+CHROMADB_SERVER = os.getenv("CHROMADB_SERVER") or "http://localhost:8080"
 
 class PDFProcessor:
-    def __init__(self, chunk_size: int = 1000, chunk_overlap: int = 100):
+    def __init__(self, chunk_size=1000, chunk_overlap=100):
+        self.llm_client = OpenAI(api_key=OPENAI_API_KEY)
+        self.section_extractor = SectionExtractor(self.llm_client)
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
 
-    def process_pdf(self, pdf_path: str, paper_id: str) -> List[PaperChunk]:
-        """
-        Process a PDF file and return chunks of text with metadata.
-        Uses pymupdf4llm to get clean markdown output, which preserves structure better.
-        """
-        try:
-            # Convert PDF to markdown - this preserves structure nicely
-            md_text = pymupdf4llm.to_markdown(pdf_path)
-            logger.info(f"Successfully converted PDF to markdown for {paper_id}")
+    async def process_pdf(self, pdf_path: str) -> tuple[List[PaperChunk], List[Section]]:
+        """Process PDF and return both chunks and section information"""
+        # Get raw text using your existing method
+        text = await self._get_pdf_text(pdf_path)
 
-            # Split content into sections
-            chunks = []
-            sections = self._split_into_sections(md_text)
+        # Extract sections first
+        sections = await self.section_extractor.extract_sections(text)
 
-            # Process each section
-            for section_title, content in sections.items():
-                # Handle abstract specially
-                if section_title.lower() == "abstract":
-                    chunks.append(PaperChunk(
-                        text=self._clean_text(content),
-                        section="abstract",
-                        chunk_id=f"{paper_id}_abstract",
-                        metadata={"type": "abstract"}
-                    ))
-                else:
-                    # Create overlapping chunks for other sections
-                    section_chunks = self._create_chunks(
-                        content, section_title, paper_id
-                    )
-                    chunks.extend(section_chunks)
+        # Create chunks with enriched metadata
+        chunks = await self._create_chunks(text)
 
-            logger.info(f"Created {len(chunks)} chunks for paper {paper_id}")
-            return chunks
+        # Annotate chunks with section information
+        self._annotate_chunks_with_sections(chunks, sections)
 
-        except Exception as e:
-            logger.error(f"Error processing PDF {pdf_path}: {str(e)}")
-            raise
+        return chunks, sections
 
-    def _split_into_sections(self, md_text: str) -> Dict[str, str]:
-        """Split markdown text into sections based on headers."""
-        sections = {}
-        current_section = "unknown"
-        current_content = []
+    def _annotate_chunks_with_sections(self, chunks: List[PaperChunk], sections: List[Section]):
+        """Add section metadata to each chunk"""
+        for chunk in chunks:
+            containing_section = self._find_containing_section(chunk, sections)
+            if containing_section:
+                chunk.metadata.update({
+                    'section_id': containing_section.get_id(),
+                    'is_subsection': containing_section.is_subsection
+                })
 
-        # Split on markdown headers (# Title, ## Subtitle, etc)
-        lines = md_text.split('\n')
-        for line in lines:
-            # Check if line is a header
-            header_match = re.match(r'^#{1,6}\s+(.+)$', line)
-            if header_match:
-                # Save previous section
-                if current_content:
-                    sections[current_section] = '\n'.join(current_content)
-                    current_content = []
+    async def _get_pdf_text(self, pdf_path: str) -> str:
+            """Extract clean text from PDF while preserving structure"""
+            try:
+                # Using your existing pymupdf4llm integration
+                md_text = pymupdf4llm.to_markdown(pdf_path)
+                return self._clean_text(md_text)
+            except Exception as e:
+                logger.error(f"Error extracting PDF text: {str(e)}")
+                raise
 
-                current_section = header_match.group(1).strip()
+    def _find_containing_section(self, chunk: PaperChunk, sections: List[Section]) -> Optional[Section]:
+        """Find which section a chunk belongs to based on page numbers"""
+        chunk_page = chunk.metadata.get('page_num')
+        if not chunk_page:
+            return None
+
+        # Sort sections by page number
+        sorted_sections = sorted(sections, key=lambda s: s.start_page)
+
+        # Find the last section that starts before or on this page
+        containing_section = None
+        for section in sorted_sections:
+            if section.start_page <= chunk_page:
+                containing_section = section
             else:
-                # Add line to current section
-                if line.strip():
-                    current_content.append(line)
+                break
 
-        # Don't forget the last section
-        if current_content:
-            sections[current_section] = '\n'.join(current_content)
+        return containing_section
 
-        return sections
-
-    def _create_chunks(self, text: str, section: str, paper_id: str) -> List[PaperChunk]:
-        """Create overlapping chunks from text while preserving important elements."""
+    async def _create_chunks(self, text: str) -> List[PaperChunk]:
+        """Create overlapping chunks from document text"""
         chunks = []
-        text = self._clean_text(text)
 
         # Split into paragraphs first
         paragraphs = text.split('\n\n')
@@ -109,14 +100,14 @@ class PDFProcessor:
                 chunk_text = '\n\n'.join(current_chunk)
                 chunks.append(PaperChunk(
                     text=chunk_text,
-                    section=section,
-                    chunk_id=f"{paper_id}_{section}_{len(chunks)}",
-                    metadata={"has_equations": bool(re.search(r'\$\$.+?\$\$', chunk_text))}
+                    metadata={
+                        'has_equations': bool(re.search(r'\$\$.+?\$\$', chunk_text)),
+                        'page_num': self._estimate_page_num(chunk_text)
+                    }
                 ))
 
                 # Start new chunk with overlap
                 if self.chunk_overlap > 0:
-                    # Keep the last paragraph for overlap
                     current_chunk = current_chunk[-1:]
                     current_length = len(current_chunk[-1])
                 else:
@@ -131,16 +122,39 @@ class PDFProcessor:
             chunk_text = '\n\n'.join(current_chunk)
             chunks.append(PaperChunk(
                 text=chunk_text,
-                section=section,
-                chunk_id=f"{paper_id}_{section}_{len(chunks)}",
-                metadata={"has_equations": bool(re.search(r'\$\$.+?\$\$', chunk_text))}
+                metadata={
+                    'has_equations': bool(re.search(r'\$\$.+?\$\$', chunk_text)),
+                    'page_num': self._estimate_page_num(chunk_text)
+                }
             ))
 
         return chunks
 
+    def _estimate_page_num(self, text: str) -> int:
+        """
+        Estimate page number for a chunk of text.
+        This is a simplified version - you may want to use more sophisticated
+        page detection from your existing code.
+        """
+        # Look for page number indicators in text
+        page_matches = re.findall(r'Page (\d+)', text)
+        if page_matches:
+            return int(page_matches[0])
+
+        # Fallback to position-based estimate
+        # You'll want to replace this with your actual page detection logic
+        return 1
+
     def _clean_text(self, text: str) -> str:
-        """Clean text while preserving markdown elements."""
+        """Clean text while preserving markdown elements"""
         # Remove extra whitespace but preserve markdown
         text = re.sub(r'\n\s*\n', '\n\n', text)
         text = re.sub(r' +', ' ', text)
+
+        # Preserve equations
+        text = re.sub(r'\$\$(.*?)\$\$', r'$$\1$$', text, flags=re.DOTALL)
+
+        # Clean up markdown headers
+        text = re.sub(r'^#{1,6}\s*', '# ', text, flags=re.MULTILINE)
+
         return text.strip()

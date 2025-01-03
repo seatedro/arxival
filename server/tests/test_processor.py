@@ -1,69 +1,36 @@
 import pytest
-from ingestion.fetcher import PaperFetcher
-from ingestion.processor import PDFProcessor
-import json
-
-@pytest.fixture
-def processor():
-    return PDFProcessor(chunk_size=500, chunk_overlap=50)
-
-@pytest.fixture
-def paper_fetcher():
-    return PaperFetcher()
-
-@pytest.fixture
-def test_papers():
-    """Papers we know should work well for testing."""
-    return [
-        ("1706.03762", "Attention Is All You Need"),  # Transformer paper
-        ("2006.07733", "BYOL")  # Paper with lots of equations
-    ]
+from ingestion.section import Section
 
 @pytest.mark.asyncio
-async def test_pdf_processing(processor, paper_fetcher, test_papers, tmp_path):
-    """Test complete PDF processing pipeline."""
-    for paper_id, paper_name in test_papers:
-        print(f"\nTesting {paper_name} ({paper_id})")
+async def test_fetch_and_process(paper_fetcher, paper_processor):
+    """test full pipeline - fetch pdf and process into chunks w/ sections"""
 
-        try:
-            # First get the PDF
-            content_data = await paper_fetcher.fetch_paper_content(paper_id)
-            assert content_data["content"], "Should get PDF content"
+    # fetch paper pdf
+    paper_data = await paper_fetcher.fetch_paper_content("2005.14165")
+    assert paper_data["source_type"] == "pdf"
 
-            # Process the PDF
-            chunks = processor.process_pdf(content_data["content"], paper_id)
-            assert len(chunks) > 0, "Should create chunks"
+    # process into chunks with sections
+    chunks, sections = await paper_processor.process_pdf(paper_data["content"])
 
-            # Check for abstract
-            abstract_chunks = [c for c in chunks if c.section == "abstract"]
-            assert len(abstract_chunks) > 0, "Should have abstract"
-            assert len(abstract_chunks[0].text) > 100, "Abstract should be substantial"
+    # validate chunks
+    assert len(chunks) > 0
+    assert all("section_id" in c.metadata for c in chunks)
+    assert all("page_num" in c.metadata for c in chunks)
 
-            # Check for sections
-            sections = {c.section for c in chunks if c.section}
-            assert len(sections) > 1, "Should find multiple sections"
+    # validate sections
+    assert len(sections) > 0
+    assert all(isinstance(s, Section) for s in sections)
+    assert any(not s.is_subsection for s in sections) # has top-level sections
+    assert any(s.is_subsection for s in sections) # has subsections
 
-            # Save sample output for manual inspection
-            output_file = tmp_path / f"{paper_id}_chunks.json"
-            with open(output_file, 'w') as f:
-                json.dump({
-                    "paper_id": paper_id,
-                    "total_chunks": len(chunks),
-                    "sections_found": list(sections),
-                    "sample_chunks": [{
-                        "section": c.section,
-                        "text_preview": c.text[:200],
-                        "metadata": c.metadata
-                    } for c in chunks[:3]]
-                }, f, indent=2)
+@pytest.mark.asyncio
+async def test_chunk_section_annotation(paper_processor):
+    """test that chunks get properly tagged with section info"""
+    sample_text = "1. Methods\nThis section..."
 
-            print(f"Saved chunk samples to {output_file}")
-            print(f"Found sections: {sections}")
-            print(f"Total chunks: {len(chunks)}")
+    chunks = await paper_processor._create_chunks(sample_text)
+    sections = await paper_processor.section_extractor.extract_sections(sample_text)
 
-        except Exception as e:
-            print(f"Error processing {paper_id}: {e}")
-            raise
+    paper_processor._annotate_chunks_with_sections(chunks, sections)
 
-if __name__ == "__main__":
-    pytest.main([__file__, "-v", "--tb=short"])
+    assert all("section_id" in c.metadata for c in chunks)
