@@ -58,31 +58,17 @@ class PaperFetcher:
 
     async def fetch_paper_content(self, paper_id: str) -> dict:
         """
-        Try to fetch paper content, first attempting HTML version, falling back to PDF.
+        Try to fetch paper content, i originally tried using arxiv's experimental html but it's taking too long to figure out beautiful soup... PDF it is.
         Returns dict with content and source type.
         """
         try:
-            # first try html version
-            html_url = f"https://arxiv.org/html/{paper_id}"
-            async with aiohttp.ClientSession() as session:
-                async with session.get(html_url) as response:
-                    if response.status == 200:
-                        html_content = await response.text()
-                        logger.info(f"Successfully fetched HTML for paper {paper_id}")
-                        return {
-                            "content": html_content,
-                            "source_type": "html",
-                            "url": html_url
-                        }
-
-                    # if html fails, fallback to pdf
-                    logger.info(f"HTML not available for {paper_id}, falling back to PDF")
-                    pdf_path = await self.download_paper_pdf(paper_id)
-                    return {
-                        "content": pdf_path,  # return path to downloaded pdf
-                        "source_type": "pdf",
-                        "url": f"https://arxiv.org/pdf/{paper_id}.pdf"
-                    }
+            async with aiohttp.ClientSession():
+                pdf_path = await self.download_paper_pdf(paper_id)
+                return {
+                    "content": pdf_path,  # return path to downloaded pdf
+                    "source_type": "pdf",
+                    "url": f"https://arxiv.org/pdf/{paper_id}.pdf"
+                }
 
         except Exception as e:
             logger.error(f"Error fetching content for paper {paper_id}: {str(e)}")
