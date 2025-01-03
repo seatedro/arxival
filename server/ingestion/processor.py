@@ -6,16 +6,15 @@ from typing import List, Optional
 from ingestion.models import PaperChunk
 from ingestion.section import Section, SectionExtractor
 from openai import OpenAI
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-TEI_SERVER = os.getenv("TEI_SERVER") or "http://localhost:8000"
-TEI_TOKEN = os.getenv("TEI_TOKEN") or "dummy_token"
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY") or "dummy_token"
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or "dummy_token"
-CHROMADB_TOKEN = os.getenv("CHROMADB_TOKEN") or "dummy"
-CHROMADB_SERVER = os.getenv("CHROMADB_SERVER") or "http://localhost:8080"
 
 class PDFProcessor:
     def __init__(self, chunk_size=1000, chunk_overlap=100):

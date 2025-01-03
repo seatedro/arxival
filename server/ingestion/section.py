@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from typing import List, Optional
+import typing_extensions as typing
 import logging
 
 from openai import OpenAI
@@ -21,10 +22,10 @@ class Section(BaseModel):
         """Generate unique identifier for this section"""
         return f"{self.name}: {self.title}"
 
+
 class SectionList(BaseModel):
     """List of sections found in a paper"""
     sections: List[Section] = Field(..., description="All sections found in the paper")
-
 
 class SectionExtractor:
     """Extracts hierarchical section information from academic papers using LLM"""
@@ -44,10 +45,12 @@ class SectionExtractor:
                      Only include actual section headers (e.g. "3. Methods"), not figures or tables.
                      For each section, identify its number, title, start page, and whether it's a subsection.
                      """},
-                    {"role": "user", "content": pdf_text}
+                    {"role": "user", "content": pdf_text},
                 ],
                 response_format=SectionList
             )
+
+            print(completion)
 
             if not completion.choices[0].message.parsed:
                 raise ValueError("No completion choices returned")
