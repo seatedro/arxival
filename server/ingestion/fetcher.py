@@ -18,7 +18,7 @@ class PaperFetcher:
     async def fetch_papers(self,
                           query: Optional[str] = None,
                           paper_ids: Optional[List[str]] = None,
-                          max_results: int = 10) -> List[Dict]:
+                          max_results: int = 10, offset: int = 0) -> List[Dict]:
         """
         Fetch papers from ArXiv based on query or paper IDs.
         Returns list of paper metadata + content dicts.
@@ -35,7 +35,7 @@ class PaperFetcher:
                 )
 
             papers = []
-            for result in self.client.results(search):
+            for result in self.client.results(search, offset=offset):
                 paper = {
                     "id": result.entry_id.split("/")[-1],
                     "title": result.title,

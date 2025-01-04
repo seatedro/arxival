@@ -11,6 +11,7 @@ class ExtractedImage:
     height: int
     image_data: bytes
     extension: str
+    figure_number: int
     section_id: Optional[str] = None
 
     def to_base64(self) -> str:

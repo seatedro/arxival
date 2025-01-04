@@ -105,7 +105,7 @@ class RAGPipeline:
         for i in range(0, len(texts), self.batch_size):
             batch = texts[i:i + self.batch_size]
             response = self.embed_client.embeddings.create(
-                model="text-embedding-3-small",
+                model="text-embedding-3-large",
                 input=batch
             )
             all_embeddings.extend([e.embedding for e in response.data])
@@ -128,6 +128,7 @@ class RAGPipeline:
             for img in images:
                 path = await self.image_store.store_image(paper_metadata["id"], img)
                 image_metadata.append({
+                    "figure_number": img.figure_number,
                     "paper_id": paper_metadata["id"],
                     "xref": img.xref,
                     "width": img.width,

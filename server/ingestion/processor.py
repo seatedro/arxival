@@ -5,6 +5,7 @@ import pymupdf4llm
 import pymupdf
 from typing import List, Optional, Tuple
 from ingestion.models import ExtractedImage, PaperChunk
+from langchain.text_splitter import MarkdownTextSplitter
 from ingestion.section import Section, SectionExtractor
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -20,11 +21,15 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or "dummy_token"
 class PDFProcessor:
     def __init__(self, chunk_size=1000, chunk_overlap=100):
         self.llm_client = OpenAI(api_key=OPENAI_API_KEY)
-        self.section_extractor = SectionExtractor(self.llm_client)
+        self.section_extractor = SectionExtractor()
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
         self.min_dimension = 100
         self.min_size_bytes = 2048
+        self.splitter = MarkdownTextSplitter(
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap
+        )
 
     async def process_pdf(self, pdf_path: str) -> tuple[List[PaperChunk], List[Section], List[ExtractedImage]]:
         """Process PDF and return both chunks and section information"""
@@ -49,6 +54,7 @@ class PDFProcessor:
             doc = pymupdf.open(pdf_path)
             images = []
             seen_xrefs = set()
+            figure_number = 1
 
             for page_num in range(doc.page_count):
                 page_images = doc.get_page_images(page_num)
@@ -78,9 +84,11 @@ class PDFProcessor:
                         height=height,
                         image_data=image_dict["image"],
                         extension=image_dict["ext"],
-                        section_id=containing_section.get_id() if containing_section else None
+                        section_id=containing_section.get_id() if containing_section else None,
+                        figure_number=figure_number
                     ))
                     seen_xrefs.add(xref)
+                    figure_number += 1
 
             return images
 
@@ -131,7 +139,7 @@ class PDFProcessor:
             """Extract clean text from PDF while preserving structure"""
             try:
                 # Using your existing pymupdf4llm integration
-                md_text = pymupdf4llm.to_markdown(pdf_path)
+                md_text = pymupdf4llm.to_markdown(pdf_path, show_progress=False)
                 return self._clean_text(md_text)
             except Exception as e:
                 logger.error(f"Error extracting PDF text: {str(e)}")
@@ -158,69 +166,71 @@ class PDFProcessor:
 
     async def _create_chunks(self, text: str) -> List[PaperChunk]:
         """Create overlapping chunks from document text"""
-        chunks = []
+        try:
+            split_docs = self.splitter.create_documents([text])
+            chunks = []
 
-        # Split into paragraphs first
-        paragraphs = text.split('\n\n')
+            for i, doc in enumerate(split_docs):
+                page_num = self._estimate_page_num(doc.page_content)
 
-        current_chunk = []
-        current_length = 0
-
-        for para in paragraphs:
-            para = para.strip()
-            if not para:
-                continue
-
-            # Check if adding this paragraph would exceed chunk size
-            if current_length + len(para) > self.chunk_size and current_chunk:
-                # Create chunk from current buffer
-                chunk_text = '\n\n'.join(current_chunk)
-                chunks.append(PaperChunk(
-                    text=chunk_text,
+                chunk = PaperChunk(
+                    text=doc.page_content,
                     metadata={
-                        'has_equations': bool(re.search(r'\$\$.+?\$\$', chunk_text)),
-                        'page_num': self._estimate_page_num(chunk_text)
+                        'has_equations': bool(re.search(r'\$\$.+?\$\$', doc.page_content)),
+                        'page_num': page_num,
+                        **doc.metadata
                     }
-                ))
+                )
+                chunks.append(chunk)
 
-                # Start new chunk with overlap
-                if self.chunk_overlap > 0:
-                    current_chunk = current_chunk[-1:]
-                    current_length = len(current_chunk[-1])
-                else:
-                    current_chunk = []
-                    current_length = 0
-
-            current_chunk.append(para)
-            current_length += len(para)
-
-        # Don't forget the last chunk
-        if current_chunk:
-            chunk_text = '\n\n'.join(current_chunk)
-            chunks.append(PaperChunk(
-                text=chunk_text,
-                metadata={
-                    'has_equations': bool(re.search(r'\$\$.+?\$\$', chunk_text)),
-                    'page_num': self._estimate_page_num(chunk_text)
-                }
-            ))
-
-        return chunks
+            return chunks
+        except Exception as e:
+            logger.error(f"Error creating chunks: {str(e)}")
+            raise
 
     def _estimate_page_num(self, text: str) -> int:
         """
-        Estimate page number for a chunk of text.
-        This is a simplified version - you may want to use more sophisticated
-        page detection from your existing code.
+        Estimate page number for a chunk of text using multiple detection methods.
+        Falls back through progressively less reliable methods.
         """
-        # Look for page number indicators in text
-        page_matches = re.findall(r'Page (\d+)', text)
-        if page_matches:
-            return int(page_matches[0])
+        # Method 1: Look for explicit page markers with variations
+        page_patterns = [
+            r'Page[:\s-]*(\d+)',  # "Page 1", "Page: 1", "Page-1"
+            r'\[pg\.?\s*(\d+)\]', # [pg 1], [pg. 1]
+            r'\(p\.?\s*(\d+)\)',  # (p 1), (p. 1)
+            r'^\s*(\d+)\s*$',     # Standalone numbers at start of lines
+            r'_{2,}\s*(\d+)\s*$'  # Page numbers after underscores
+        ]
 
-        # Fallback to position-based estimate
-        # You'll want to replace this with your actual page detection logic
-        return 1
+        for pattern in page_patterns:
+            matches = re.findall(pattern, text, re.MULTILINE | re.IGNORECASE)
+            if matches:
+                # Take the most frequent page number found
+                page_numbers = [int(m) for m in matches]
+                return max(set(page_numbers), key=page_numbers.count)
+
+        # Method 2: Look for footer/header patterns
+        footer_matches = re.findall(r'\n[-−–—]\s*(\d+)\s*[-−–—]', text)
+        if footer_matches:
+            return int(footer_matches[-1])
+
+        # Method 3: Extract numbers that appear to be in header/footer positions
+        lines = text.split('\n')
+        if len(lines) > 4:
+            potential_numbers = []
+            # Check first and last two lines
+            check_lines = [lines[0], lines[1], lines[-2], lines[-1]]
+            for line in check_lines:
+                numbers = re.findall(r'\b(\d+)\b', line)
+                potential_numbers.extend([int(n) for n in numbers if 1 <= int(n) <= 9999])
+
+            if potential_numbers:
+                return min(potential_numbers)  # Take smallest plausible number
+
+        if len(text) < 1000:  # Short text likely from early in document
+            return 1
+        else:
+            return max(1, len(text) // 3000)  # Assume ~3000 chars per page
 
     def _clean_text(self, text: str) -> str:
         """Clean text while preserving markdown elements"""
