@@ -68,6 +68,8 @@ async def main():
         date_to = args.date_to
 
     logger.info(f"Starting paper ingestion from {date_from} to {date_to}")
+    logger.info(f"Batch size: {args.batch_size}")
+    logger.info(f"Max papers: {args.max_papers}")
     logger.info(f"Query: {args.query}")
     logger.info(f"Field: {args.field}")
     logger.info(f"Min citations: {args.min_citations}")

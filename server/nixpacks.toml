@@ -1,2 +1,0 @@
-[start]
-cmd = "python cron_batch.py --max-papers 500 --date-from 2018"
