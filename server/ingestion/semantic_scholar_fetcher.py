@@ -12,7 +12,7 @@ class SemanticScholarFetcher:
 
     BASE_URL = "https://api.semanticscholar.org/graph/v1/paper/search/bulk"
 
-    def __init__(self, min_citations: int = 100, year_from: int = 2017, year_to: int = 2024):
+    def __init__(self, min_citations: int = 100, year_from: int = 2017, year_to: int | None = None):
         self.min_citations = min_citations
         self.fields = [
                     "title", "abstract", "year", "authors", "openAccessPdf",
@@ -59,7 +59,7 @@ class SemanticScholarFetcher:
                 'fields': ','.join(self.fields),
                 'sort': 'citationCount:desc',
                 'openAccessPdf': '',
-                'year': f'{self.year_from}-{self.year_to}',
+                'year': f'{self.year_from}' if not self.year_to else f'{self.year_from}-{self.year_to}',
                 'fieldsOfStudy': 'Computer Science',
                 'minCitationCount': str(self.min_citations)
             }

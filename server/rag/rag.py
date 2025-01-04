@@ -13,6 +13,7 @@ from ingestion.models import ExtractedImage, PaperChunk
 from ingestion.processor import OPENAI_API_KEY
 from ingestion.section import Section
 from ingestion.store import R2ImageStore
+from rag.models import StructuredResponse
 
 load_dotenv()
 
@@ -321,59 +322,35 @@ Retrieved content from academic papers:"""
             return sorted_images[figure_num - 1]
         return None
 
-    async def generate(self, query: str) -> GeneratedResponse:
-        """Generate response with section-aware citations"""
+    async def generate(self, query: str) -> StructuredResponse:
+        """Generate structured response with section-aware citations"""
         contexts = await self.retrieve(query)
         prompt = self._build_prompt(query, contexts)
+        prompt = self._build_prompt(query, contexts)
 
-        response = self.embed_client.chat.completions.create(
+
+        # Request structured output using GPT's parse mode
+        response = self.embed_client.beta.chat.completions.parse(
             model="gpt-4o-mini",
             messages=[{
                 "role": "system",
-                "content": "You are a research assistant specializing in academic papers. When referencing figures, use the format: Figure X from [paper_id]."
+                "content": """You are a research assistant analyzing academic papers.
+                Synthesize the information into a structured response with:
+                - Introduction section summarizing key points
+                - Analysis section diving into details
+                - Conclusion section tying everything together
+                For each section, include:
+                - List the section_ids you cited (e.g. "3.1: Methods")
+                - List any figures referenced as paper_id/figure_number
+                """
             }, {
                 "role": "user",
                 "content": prompt
             }],
-            temperature=0.3
+            response_format=StructuredResponse
         )
 
+        structured_response = response.choices[0].message.parsed
 
-        # Track citations and sections
-        citations = set()
-        referenced_images = set()
-        sections_referenced = []
-        answer = response.choices[0].message.content
-        referenced_numbers = self._extract_figure_references(answer or "")
-        for ctx in contexts:
-            paper_id = ctx.paper_metadata['id']
-            if answer and f"[{paper_id}]" in answer:
-                citations.add(paper_id)
-                paper_images = ctx.paper_metadata.get('images', [])
-                if referenced_numbers and paper_images:
-                    # Try to map each referenced number to an image
-                    for fig_num in referenced_numbers:
-                        img = self._map_figure_number_to_image(fig_num, paper_images)
-                        if img:
-                            referenced_images.add(json.dumps(img))
-                if ctx.section:
-                    sections_referenced.append(ctx.section.get_id())
-
-        return GeneratedResponse(
-            answer=answer,
-            citations=[{
-                                "paper_id": paper_id,
-                                "title": next(ctx.paper_metadata['title']
-                                                           for ctx in contexts
-                                                           if ctx.paper_metadata['id'] == paper_id),
-                                "authors": next(ctx.paper_metadata['authors']
-                                                             for ctx in contexts
-                                                             if ctx.paper_metadata['id'] == paper_id),
-                                "published": next(ctx.paper_metadata['published']
-                                                             for ctx in contexts
-                                                             if ctx.paper_metadata['id'] == paper_id)
-                            } for paper_id in citations],
-            confidence=sum(ctx.score for ctx in contexts) / len(contexts),
-            referenced_images=list(referenced_images),
-            sections_referenced=list(set(sections_referenced))
-        )
+        # Validate and return
+        return structured_response

@@ -115,7 +115,7 @@ class BatchIngester:
 
     async def ingest_papers(self,
                           query: Optional[str] = None,
-                          paper_ids: Optional[List[str]] = None,
+                          papers: Optional[list] = None,
                           max_papers: int = 100,
                           batch_size: int = 10,
                           ):
@@ -129,31 +129,31 @@ class BatchIngester:
                 logger.info(f"Resuming from checkpoint with {len(processed_ids)} papers")
 
         # Fetch or load papers
-        papers = []
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-        ) as progress:
+        if not papers:
+            papers = []
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            ) as progress:
 
-            fetch_task = progress.add_task("Fetching papers...", total=None)
-            try:
-                papers = await self.fetcher.fetch_papers(
-                    query=query,
-                    paper_ids=paper_ids,
-                    max_results=max_papers,
-                )
-                # Cache metadata
-                for paper in papers:
-                    self.metadata_cache[paper["id"]] = paper
-                self._save_cache()
+                fetch_task = progress.add_task("Fetching papers...", total=None)
+                try:
+                    papers = await self.fetcher.fetch_papers(
+                        query=query,
+                        max_results=max_papers,
+                    )
+                    # Cache metadata
+                    for paper in papers:
+                        self.metadata_cache[paper["id"]] = paper
+                    self._save_cache()
 
-            except Exception as e:
-                logger.error(f"Failed to fetch papers: {str(e)}")
-                return 0
-            finally:
-                progress.remove_task(fetch_task)
+                except Exception as e:
+                    logger.error(f"Failed to fetch papers: {str(e)}")
+                    return 0
+                finally:
+                    progress.remove_task(fetch_task)
 
         # Filter new papers
         papers = [p for p in papers if p["id"] not in processed_ids]
