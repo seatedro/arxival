@@ -91,7 +91,6 @@ class SectionExtractor:
                     )
                     sections.append(section)
 
-            logger.info(f"Extracted {len(sections)} sections")
             return sections
 
         except Exception as e:

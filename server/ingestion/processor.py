@@ -55,11 +55,18 @@ class PDFProcessor:
             images = []
             seen_xrefs = set()
             figure_number = 1
+            max_images = 50
 
             for page_num in range(doc.page_count):
+                if len(images) >= max_images:
+                    break
+
                 page_images = doc.get_page_images(page_num)
 
                 for img in page_images:
+                    if len(images) >= max_images:
+                        break
+
                     xref = img[0]
                     if xref in seen_xrefs:
                         continue

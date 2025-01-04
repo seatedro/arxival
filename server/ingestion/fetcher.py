@@ -82,7 +82,6 @@ class PaperFetcher:
             search = arxiv.Search(id_list=[paper_id])
             paper = next(self.client.results(search))
             filepath = paper.download_pdf(dirpath=output_dir)
-            logger.info(f"Downloaded PDF for paper {paper_id} to {filepath}")
             return filepath
         except Exception as e:
             logger.error(f"Error downloading PDF for paper {paper_id}: {str(e)}")

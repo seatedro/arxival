@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 from ingestion.models import ExtractedImage, PaperChunk
 from ingestion.processor import OPENAI_API_KEY
 from ingestion.section import Section
-from ingestion.store import ImageStore
+from ingestion.store import R2ImageStore
 
 load_dotenv()
 
@@ -97,7 +97,7 @@ class RAGPipeline:
 
         self.batch_size = batch_size
 
-        self.image_store = ImageStore()
+        self.image_store = R2ImageStore("arxival")
 
     def _batch_encode(self, texts: List[str]) -> List[List[float]]:
         """Generate embeddings in batches"""
@@ -177,7 +177,6 @@ class RAGPipeline:
                 ids=ids,
                 metadatas=metadata
             )
-            logger.info(f"Added {len(chunks)} chunks from paper {paper_metadata['id']}")
 
     async def retrieve(self, query: str, top_k: int = 5) -> List[RetrievedContext]:
         """Retrieve and reconstruct contexts"""
