@@ -1,0 +1,2 @@
+[start]
+cmd = "python cron_ingest.py --max-papers 50 --date-from 2024"
