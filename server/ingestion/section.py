@@ -50,8 +50,6 @@ class SectionExtractor:
                 response_format=SectionList
             )
 
-            print(completion)
-
             if not completion.choices[0].message.parsed:
                 raise ValueError("No completion choices returned")
 

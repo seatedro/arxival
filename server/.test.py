@@ -35,16 +35,17 @@ async def process_paper():
 
     # 2. process into chunks with sections
     processor = PDFProcessor()
-    chunks, sections = await processor.process_pdf(content["content"])
+    chunks, sections, images = await processor.process_pdf(content["content"])
 
     # 3. add to rag pipeline
     rag = RAGPipeline()
-    await rag.add_paper(chunks, sections, paper_data[0])
+    await rag.add_paper(chunks, sections, images, paper_data[0])
 
     # 4. query!
-    response = await rag.generate("What are the key findings?")
+    response = await rag.generate("Explain the underlying principles of the Transformer architecture.")
     print(f"Answer: {response.answer}")
-    print(f"Sections referenced: {response.sections_referenced}")
+    print(f"Figures referenced: {response.referenced_images}")
+    print(f"Citations: {response.citations}")
 
 # Call the async function
 asyncio.run(process_paper())

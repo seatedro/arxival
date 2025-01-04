@@ -47,7 +47,6 @@ class PaperFetcher:
                     "pdf_url": result.pdf_url,
                 }
                 papers.append(paper)
-                logger.info(f"Fetched paper: {paper['id']} - {paper['title']}")
 
             return papers
 

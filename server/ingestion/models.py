@@ -1,5 +1,20 @@
 from dataclasses import dataclass, field
 from typing import Dict, Optional
+import base64
+
+@dataclass
+class ExtractedImage:
+    """Represents an image extracted from a paper"""
+    xref: int
+    page_num: int
+    width: int
+    height: int
+    image_data: bytes
+    extension: str
+    section_id: Optional[str] = None
+
+    def to_base64(self) -> str:
+        return base64.b64encode(self.image_data).decode()
 
 @dataclass
 class PaperChunk:

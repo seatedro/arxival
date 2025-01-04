@@ -2,8 +2,9 @@ import os
 import re
 import logging
 import pymupdf4llm
-from typing import List, Optional
-from ingestion.models import PaperChunk
+import pymupdf
+from typing import List, Optional, Tuple
+from ingestion.models import ExtractedImage, PaperChunk
 from ingestion.section import Section, SectionExtractor
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -22,8 +23,10 @@ class PDFProcessor:
         self.section_extractor = SectionExtractor(self.llm_client)
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
+        self.min_dimension = 100
+        self.min_size_bytes = 2048
 
-    async def process_pdf(self, pdf_path: str) -> tuple[List[PaperChunk], List[Section]]:
+    async def process_pdf(self, pdf_path: str) -> tuple[List[PaperChunk], List[Section], List[ExtractedImage]]:
         """Process PDF and return both chunks and section information"""
         # Get raw text using your existing method
         text = await self._get_pdf_text(pdf_path)
@@ -37,7 +40,82 @@ class PDFProcessor:
         # Annotate chunks with section information
         self._annotate_chunks_with_sections(chunks, sections)
 
-        return chunks, sections
+        images = await self._extract_images(pdf_path, sections)
+
+        return chunks, sections, images
+
+    async def _extract_images(self, pdf_path: str, sections: List[Section]) -> List[ExtractedImage]:
+            """Extract images while preserving section context"""
+            doc = pymupdf.open(pdf_path)
+            images = []
+            seen_xrefs = set()
+
+            for page_num in range(doc.page_count):
+                page_images = doc.get_page_images(page_num)
+
+                for img in page_images:
+                    xref = img[0]
+                    if xref in seen_xrefs:
+                        continue
+
+                    width, height = img[2], img[3]
+                    if min(width, height) <= self.min_dimension:
+                        continue
+
+                    image_dict = self._recover_image(doc, img)
+                    if len(image_dict["image"]) <= self.min_size_bytes:
+                        continue
+
+                    containing_section = self._find_containing_section(
+                        PaperChunk(text="", metadata={"page_num": page_num + 1}),
+                        sections
+                    )
+
+                    images.append(ExtractedImage(
+                        xref=xref,
+                        page_num=page_num + 1,
+                        width=width,
+                        height=height,
+                        image_data=image_dict["image"],
+                        extension=image_dict["ext"],
+                        section_id=containing_section.get_id() if containing_section else None
+                    ))
+                    seen_xrefs.add(xref)
+
+            return images
+
+    def _recover_image(self, doc: pymupdf.Document, img: Tuple) -> dict:
+            """Handle image extraction with mask support"""
+            xref, smask = img[0], img[1]
+
+            if smask > 0:
+                pix0 = pymupdf.Pixmap(doc.extract_image(xref)["image"])
+                if pix0.alpha:
+                    pix0 = pymupdf.Pixmap(pix0, 0)
+                mask = pymupdf.Pixmap(doc.extract_image(smask)["image"])
+
+                try:
+                    pix = pymupdf.Pixmap(pix0, mask)
+                except:
+                    pix = pymupdf.Pixmap(doc.extract_image(xref)["image"])
+
+                ext = "png" if pix0.n <= 3 else "pam"
+                return {
+                    "ext": ext,
+                    "colorspace": pix.colorspace.n,
+                    "image": pix.tobytes(ext)
+                }
+
+            if "/ColorSpace" in doc.xref_object(xref, compressed=True):
+                pix = pymupdf.Pixmap(doc, xref)
+                pix = pymupdf.Pixmap(pymupdf.csRGB, pix)
+                return {
+                    "ext": "png",
+                    "colorspace": 3,
+                    "image": pix.tobytes("png")
+                }
+
+            return doc.extract_image(xref)
 
     def _annotate_chunks_with_sections(self, chunks: List[PaperChunk], sections: List[Section]):
         """Add section metadata to each chunk"""
