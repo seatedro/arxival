@@ -15,12 +15,34 @@ class SemanticScholarFetcher:
     def __init__(self, min_citations: int = 100, year_from: int = 2017, year_to: int = 2024):
         self.min_citations = min_citations
         self.fields = [
-            "title", "abstract", "year", "authors", "openAccessPdf",
-            "citationCount", "venue", "publicationDate", "fieldsOfStudy"
-        ]
+                    "title", "abstract", "year", "authors", "openAccessPdf",
+                    "citationCount", "venue", "publicationDate", "fieldsOfStudy",
+                    "externalIds", "url"
+                ]
         self.year_from = year_from
         self.year_to = year_to
         self.paper_cache = {}
+
+    def _get_source_info(self, paper: Dict) -> Dict:
+        """Extract paper source and format proper URL"""
+        external_ids = paper.get('externalIds', {})
+
+        # Try to identify source and get proper URL
+        if 'DOI' in external_ids:
+            return {
+                'source': 'doi',
+                'source_id': external_ids['DOI'],
+                'pdf_url': paper['openAccessPdf']['url'],
+                'paper_url': f'https://doi.org/{external_ids["DOI"]}'
+            }
+        else:
+            # Fallback
+            return {
+                'source': 'other',
+                'source_id': paper['paperId'],
+                'pdf_url': paper['openAccessPdf']['url'],
+                'paper_url': paper['url']
+            }
 
     async def fetch_papers(self,
                           query: Optional[str] = "machine learning",
@@ -71,7 +93,6 @@ class SemanticScholarFetcher:
 
                 await asyncio.sleep(3)  # Rate limiting
 
-            logger.info(f"Fetched {len(papers)} papers")
             return papers[:max_results]
 
         except Exception as e:
@@ -84,6 +105,9 @@ class SemanticScholarFetcher:
             if not paper.get('openAccessPdf'):
                 return None
 
+
+            source_info = self._get_source_info(paper)
+
             return {
                 "id": paper.get('paperId'),
                 "title": paper.get('title'),
@@ -92,9 +116,13 @@ class SemanticScholarFetcher:
                 "categories": paper.get('fieldsOfStudy', []),
                 "published": paper.get('publicationDate') or f"{paper.get('year')}-01-01",
                 "updated": paper.get('publicationDate') or f"{paper.get('year')}-01-01",
-                "pdf_url": paper['openAccessPdf']['url'],
+                "pdf_url": source_info['pdf_url'],
+                "paper_url": source_info['paper_url'],
                 "citation_count": paper.get('citationCount'),
-                "venue": paper.get('venue')
+                "venue": paper.get('venue'),
+                "source": source_info['source'],
+                "source_id": source_info['source_id'],
+                "external_ids": paper.get('externalIds', {})
             }
         except Exception as e:
             logger.error(f"Error processing paper: {str(e)}")
@@ -112,7 +140,10 @@ class SemanticScholarFetcher:
             return {
                 "content": pdf_path,
                 "source_type": "pdf",
-                "url": paper['pdf_url']
+                "url": paper['pdf_url'],
+                "paper_url": paper['paper_url'],
+                "source": paper['source'],
+                "source_id": paper['source_id']
             }
 
         except Exception as e:
@@ -147,7 +178,6 @@ class SemanticScholarFetcher:
                                 break
                             f.write(chunk)
 
-            logger.info(f"Downloaded PDF for paper {paper_id} to {filepath}")
             return filepath
 
         except Exception as e:

@@ -29,7 +29,8 @@ class PaperChunk:
 
     # Rich metadata about the chunk and its context
     metadata: Dict = field(default_factory=lambda: {
-        'paper_id': None,          # Unique identifier for the source paper
+        'paper_id': None,          # Unique identifier for the source paper from arXiv fetcher
+        'paper_url': None,         # URL to the paper from semantic scholar
         'page_num': None,          # Page number in the source document
         'section_id': None,        # Full section identifier (e.g. "3.2: Implementation Details")
         'parent_section_id': None, # Parent section (e.g. "3: Methods")
@@ -46,6 +47,7 @@ class PaperChunk:
         # Ensure all expected metadata fields exist
         default_metadata = {
             'paper_id': None,
+            'paper_url': None,
             'page_num': None,
             'section_id': None,
             'parent_section_id': None,

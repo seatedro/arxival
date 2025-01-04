@@ -130,6 +130,7 @@ class RAGPipeline:
                 image_metadata.append({
                     "figure_number": img.figure_number,
                     "paper_id": paper_metadata["id"],
+                    "paper_url": paper_metadata["paper_url"],
                     "xref": img.xref,
                     "width": img.width,
                     "height": img.height,
@@ -160,6 +161,7 @@ class RAGPipeline:
                 # Build metadata dict with sanitized values
                 meta = prepare_metadata({
                     'paper_id': paper_metadata['id'],
+                    "paper_url": paper_metadata["paper_url"],
                     'chunk_metadata': chunk.metadata,
                     'paper_metadata': paper_metadata,
                     'section_data': section_data
@@ -251,6 +253,8 @@ Retrieved content from academic papers:"""
         for paper_id, data in paper_contexts.items():
             meta = data['metadata']
             prompt += f"\n\nPaper [{paper_id}]: {meta['title']}"
+            if meta.get('paper_url'):
+                prompt += f"\nSource: {meta['paper_url']}"
             prompt += f"\nAuthors: {', '.join(meta['authors'])}"
             prompt += f"\nPublished: {meta['published']}"
             prompt += f"\nCategories: {', '.join(meta['categories'])}"
