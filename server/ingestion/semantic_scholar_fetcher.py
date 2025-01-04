@@ -12,16 +12,19 @@ class SemanticScholarFetcher:
 
     BASE_URL = "https://api.semanticscholar.org/graph/v1/paper/search/bulk"
 
-    def __init__(self, min_citations: int = 100):
+    def __init__(self, min_citations: int = 100, year_from: int = 2017, year_to: int = 2024):
         self.min_citations = min_citations
         self.fields = [
             "title", "abstract", "year", "authors", "openAccessPdf",
             "citationCount", "venue", "publicationDate", "fieldsOfStudy"
         ]
+        self.year_from = year_from
+        self.year_to = year_to
         self.paper_cache = {}
 
     async def fetch_papers(self,
                           query: Optional[str] = "machine learning",
+                          paper_ids: Optional[List[str]] = None,
                           max_results: int = 100) -> List[Dict]:
         """
         Fetch papers from Semantic Scholar based on query or paper IDs.
@@ -34,7 +37,7 @@ class SemanticScholarFetcher:
                 'fields': ','.join(self.fields),
                 'sort': 'citationCount:desc',
                 'openAccessPdf': '',
-                'year': '2017-2024',
+                'year': f'{self.year_from}-{self.year_to}',
                 'fieldsOfStudy': 'Computer Science',
                 'minCitationCount': str(self.min_citations)
             }

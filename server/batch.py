@@ -11,6 +11,7 @@ from rich.logging import RichHandler
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskID
 
 from ingestion.fetcher import PaperFetcher
+from ingestion.semantic_scholar_fetcher import SemanticScholarFetcher
 from ingestion.processor import PDFProcessor
 from rag.rag import RAGPipeline
 import traceback
@@ -26,12 +27,13 @@ logger = logging.getLogger(__name__)
 
 class BatchIngester:
     def __init__(self,
+                    fetcher: PaperFetcher | SemanticScholarFetcher = PaperFetcher(),
                  output_dir: str = "./papers",
                  cache_dir: str = "./cache",
                  checkpoint_file: str = "ingestion_checkpoint.json",
                  error_log: str = "ingestion_errors.jsonl",
                  skip_log: str = "ingestion_skipped.jsonl"):
-        self.fetcher = PaperFetcher()
+        self.fetcher = fetcher
         self.processor = PDFProcessor()
         self.rag = RAGPipeline()
 
