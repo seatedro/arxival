@@ -337,7 +337,7 @@ Format your response as a series of clear paragraphs that flow together naturall
 
         return figure_numbers
 
-    async def generate(self, query: str) -> AsyncGenerator[Dict[str, any], None]:
+    async def generate(self, query: str) -> AsyncGenerator[Dict[str, Any], None]:
         """Generate structured response with section-aware citations"""
         start_time = time.time()
         contexts, retrieval_timing = await self.retrieve(query)
@@ -360,6 +360,98 @@ Format your response as a series of clear paragraphs that flow together naturall
                 - List the section_ids you cited (e.g. "3.1: Methods")
                 - List any figures referenced using the storage_path (e.g. "2405.16964v2/2.png")
                 """,
+                },
+                {"role": "user", "content": prompt},
+            ],
+            response_format=StructuredResponse,
+        ) as stream:
+            for event in stream:
+                if event.type == "content.delta":
+                    if event.parsed is not None:
+                        delta = event.parsed
+
+                        if isinstance(delta, dict) and "paragraphs" in delta:
+                            delta["paragraphs"] = [
+                                p for p in delta["paragraphs"] if p != {}
+                            ]
+                            if len(delta["paragraphs"]) > len(paragraphs):
+                                paragraphs = delta["paragraphs"]
+                                yield {"event": "paragraph", "data": json.dumps(delta)}
+                                await asyncio.sleep(0.01)
+                    else:
+                        yield {
+                            "event": "start",
+                            "data": "Starting the stream from OpenAI",
+                        }
+                        await asyncio.sleep(0.01)
+
+                elif event.type == "content.done":
+                    generation_time = (time.time() - generation_start) * 1000
+                    total_time = (time.time() - start_time) * 1000
+
+                    response_data = event.parsed
+                    response_data.metadata.timing = TimingStats(
+                        retrieval_ms=retrieval_timing.retrieval_ms,
+                        embedding_ms=retrieval_timing.embedding_ms,
+                        generation_ms=generation_time,
+                        total_ms=total_time,
+                    )
+
+                    yield {
+                        "event": "done",
+                        "data": response_data.model_dump_json(),
+                    }
+
+                elif event.type == "error":
+                    yield {"event": "error", "data": {"message": str(event.error)}}
+
+    async def generate_followup(
+        self,
+        query: str,
+        context: Dict[str, List[str]],
+        top_k: int = 2,
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """Generate response for follow-up questions"""
+        start_time = time.time()
+        if "queries" in context:
+            full_query = f"""Previous queries: {context["queries"] + [query]}"""
+        else:
+            full_query = [query]
+
+        contexts, retrieval_timing = await self.retrieve(
+            " ".join(full_query), top_k=top_k
+        )
+
+        generation_start = time.time()
+        prompt = self._build_prompt(query, contexts)
+
+        prompt += """
+
+    Note: This is a follow-up question. Focus on:
+    1. Building upon previous context and citations
+    2. Drawing connections to previously discussed papers
+    3. Providing new relevant information while maintaining coherence
+    """
+
+        paragraphs = []
+
+        with self.embed_client.beta.chat.completions.stream(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": """You are a research assistant analyzing academic papers.
+                    Explain concepts clearly and directly, while maintaining academic rigor.
+                    Structure your response as a series of connected paragraphs that build on each other.
+                    For each section, include:
+                    - List the section_ids you cited (e.g. "3.1: Methods")
+                    - List any figures referenced using the storage_path (e.g. "2405.16964v2/2.png")
+                    - Keep this followup explanation concise
+                    """,
+                },
+                {
+                    "role": "user",
+                    "content": f"Previous queries and contexts: {json.dumps(context, indent=2)}",
                 },
                 {"role": "user", "content": prompt},
             ],

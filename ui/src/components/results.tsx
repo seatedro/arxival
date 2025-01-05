@@ -16,6 +16,7 @@ import { Skeleton } from "./ui/skeleton";
 import { QueryMessage, ResponseMessage } from "./messages";
 import { useUser } from "@/hooks";
 import { Toaster } from "./ui/toaster";
+import { FollowupInput } from "./followup";
 
 type ResultsProps = {
   initialQuery?: string;
@@ -106,7 +107,7 @@ export function Results({ initialQuery, sessionId }: ResultsProps) {
     loadSession();
   }, [user, sessionId, initialQuery]);
 
-  const startStream = (query: string, sessionId: string) => {
+  const startStream = (query: string, sessionId: string, followUp: boolean = false) => {
     setIsLoading(true);
     setLiveParagraphs([]);
     setError(null);
@@ -123,8 +124,10 @@ export function Results({ initialQuery, sessionId }: ResultsProps) {
     setMessages(prev => [...prev, queryMessage]);
 
     const sse = new EventSource(
-      `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/query/stream?` +
-      `q=${encodeURIComponent(query)}&session_id=${sessionId}`
+      followUp ? `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/query/followup/stream?` +
+        `q=${encodeURIComponent(query)}&session_id=${sessionId}`
+        : `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/query/stream?` +
+        `q=${encodeURIComponent(query)}`
     );
 
     sse.addEventListener("paragraph", (event) => {
@@ -360,6 +363,16 @@ export function Results({ initialQuery, sessionId }: ResultsProps) {
           ))}
         </div>
 
+      )}
+      {session?.userId === user?.id && !isLoading && (
+        <FollowupInput
+          onSubmit={(query) => {
+            if (session) {
+              startStream(query, session.id, true);
+            }
+          }}
+          disabled={isLoading}
+        />
       )}
       {session && (
         <div className="flex justify-between items-center mt-6">

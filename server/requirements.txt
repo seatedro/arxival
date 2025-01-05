@@ -148,3 +148,8 @@ zipp==3.21.0
 fastapi-cli
 pydantic-settings
 sse-starlette
+sqlalchemy-libsql
+sqlalchemy[asyncio]
+aiosqlite
+alembic
+libsql-experimental
