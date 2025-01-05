@@ -1,11 +1,21 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { type ResponseParagraph, type TimingStats } from "@/types/response";
+import { Share } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
+import type {
+  User,
+  Session,
+  Message,
+  ResponseParagraph,
+  TimingStats
+} from "@/types";
 import { Skeleton } from "./ui/skeleton";
 
 type ResultsProps = {
   initialQuery: string;
+  sessionId?: string;
 };
 const BACKEND_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
@@ -40,50 +50,228 @@ export function LoadingSkeleton() {
   );
 }
 
-export function Results({ initialQuery }: ResultsProps) {
+export function Results({ initialQuery, sessionId }: ResultsProps) {
+  const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [paragraphs, setParagraphs] = useState<ResponseParagraph[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [timing, setTiming] = useState<Partial<TimingStats>>({});
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
 
   useEffect(() => {
-    const fetchStream = () => {
-      setIsLoading(true);
-      setParagraphs([]);
-      setError(null);
+    const initUser = async () => {
+      let userId = localStorage.getItem('userId');
+      if (!userId) {
+        userId = crypto.randomUUID();
+        localStorage.setItem('userId', userId);
+      }
 
-      const sse = new EventSource(
-        `${BACKEND_URL}/api/query/stream?q=${encodeURIComponent(initialQuery)}`,
-      );
+      try {
+        const response = await fetch('/api/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: userId,
+            userAgent: navigator.userAgent
+          })
+        });
 
-      sse.addEventListener("paragraph", (event) => {
-        const data = JSON.parse(event.data);
-        setParagraphs(data.paragraphs);
-      });
-
-      sse.addEventListener("done", (event) => {
-        const data = JSON.parse(event.data);
-        setTiming(data.metadata.timing);
-        setIsLoading(false);
-        setParagraphs(data.paragraphs);
-        sse.close();
-      });
-
-      sse.addEventListener("error", (event) => {
-        //@ts-ignore
-        const data = JSON.parse(event.data);
-        setError(data.message);
-        setIsLoading(false);
-        sse.close();
-      });
-
-      return () => {
-        sse.close();
-      };
+        if (!response.ok) throw new Error('Failed to initialize user');
+        const userData = await response.json();
+        setUser(userData);
+      } catch (error) {
+        console.error('Failed to initialize user:', error);
+        setError('Failed to initialize user session');
+      }
     };
 
-    fetchStream();
-  }, [initialQuery]);
+    initUser();
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const initSession = async () => {
+      try {
+        if (sessionId) {
+          // Load existing session
+          const [sessionResponse, messagesResponse] = await Promise.all([
+            fetch(`/api/sessions/${sessionId}`),
+            fetch(`/api/sessions/${sessionId}/messages`)
+          ]);
+
+          if (!sessionResponse.ok || !messagesResponse.ok) {
+            throw new Error('Failed to load session');
+          }
+
+          const [sessionData, messagesData] = await Promise.all([
+            sessionResponse.json(),
+            messagesResponse.json()
+          ]);
+
+          setSession(sessionData);
+          setMessages(messagesData);
+          setIsLoading(false);
+        } else {
+          // Create new session and start stream
+          const response = await fetch('/api/sessions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-User-Id': user.id
+            },
+            body: JSON.stringify({ isPublic: false })
+          });
+
+          if (!response.ok) throw new Error('Failed to create session');
+          const newSession = await response.json();
+          setSession(newSession);
+          startStream(initialQuery, newSession.id);
+        }
+      } catch (error) {
+        console.error('Session initialization failed:', error);
+        setError('Failed to initialize chat session');
+        setIsLoading(false);
+      }
+    };
+
+    initSession();
+  }, [user, sessionId, initialQuery]);
+
+  const startStream = (query: string, sessionId: string) => {
+    setIsLoading(true);
+    setParagraphs([]);
+    setError(null);
+
+    // Add query to messages immediately
+    const queryMessage: Message = {
+      id: crypto.randomUUID(),
+      sessionId,
+      type: 'query',
+      content: query,
+      createdAt: new Date(),
+      metadata: null
+    };
+    setMessages(prev => [...prev, queryMessage]);
+
+    const sse = new EventSource(
+      `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/query/stream?` +
+      `q=${encodeURIComponent(query)}&session_id=${sessionId}`
+    );
+
+    sse.addEventListener("paragraph", (event) => {
+      const data = JSON.parse(event.data);
+      setParagraphs(data.paragraphs);
+
+      // Update response in messages
+      setMessages(prev => {
+        const lastMessage = prev[prev.length - 1];
+        if (lastMessage?.type === 'response') {
+          return [
+            ...prev.slice(0, -1),
+            {
+              ...lastMessage,
+              content: JSON.stringify(data.paragraphs)
+            }
+          ];
+        } else {
+          return [
+            ...prev,
+            {
+              id: crypto.randomUUID(),
+              sessionId,
+              type: 'response',
+              content: JSON.stringify(data.paragraphs),
+              metadata: JSON.stringify(data.metadata),
+              createdAt: new Date()
+            }
+          ];
+        }
+      });
+    });
+
+    sse.addEventListener("done", async (event) => {
+      const data = JSON.parse(event.data);
+      setTiming(data.metadata.timing);
+      setIsLoading(false);
+      setParagraphs(data.paragraphs);
+      try {
+        const queryMessage = await fetch('/api/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-User-Id': user?.id || '' },
+          body: JSON.stringify({
+            sessionId,
+            type: 'query',
+            content: query
+          })
+        }).then(r => r.json());
+
+        const responseMessage = await fetch('/api/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-User-Id': user?.id || '' },
+          body: JSON.stringify({
+            sessionId,
+            type: 'response',
+            content: JSON.stringify(data.paragraphs),
+            metadata: JSON.stringify(data.metadata)
+          })
+        }).then(r => r.json());
+
+        setMessages(prev => [...prev, queryMessage, responseMessage]);
+      } catch (error) {
+        console.error('Failed to save messages:', error);
+        toast({
+          title: 'Error',
+          description: 'Failed to save chat history',
+          variant: 'destructive'
+        });
+      }
+      sse.close();
+    });
+
+    sse.addEventListener("err", (event) => {
+      //@ts-ignore
+      const data = JSON.parse(event.data);
+      setError(data.message);
+      setIsLoading(false);
+      sse.close();
+    });
+
+    return () => {
+      sse.close();
+    };
+  };
+
+
+  // Share button handler
+  const handleShare = async () => {
+    if (!session) return;
+
+    try {
+      await fetch(`/api/sessions/${session.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isPublic: true })
+      });
+
+      const url = `${window.location.origin}/chat/${session.id}`;
+      await navigator.clipboard.writeText(url);
+
+      toast({
+        title: 'Chat shared!',
+        description: 'Link copied to clipboard'
+      });
+    } catch (error) {
+      console.error('Failed to share chat:', error);
+      toast({
+        title: 'Share failed',
+        description: 'Unable to share chat at this time',
+        variant: 'destructive'
+      });
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -160,6 +348,24 @@ export function Results({ initialQuery }: ResultsProps) {
           </div>
         ))}
       </div>
+      {session && (
+        <div className="flex justify-between items-center mt-6">
+          <Button
+            onClick={handleShare}
+            variant="outline"
+            className="space-x-2"
+          >
+            <Share className="h-4 w-4" />
+            <span>Share Chat</span>
+          </Button>
+
+          {!session.isPublic && (
+            <p className="text-sm text-muted-foreground">
+              Only you can see this chat
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
