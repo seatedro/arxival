@@ -1,3 +1,5 @@
+"use client";
+
 import { SearchBar } from '@/components/search-bar'
 import { History } from '@/components/history'
 

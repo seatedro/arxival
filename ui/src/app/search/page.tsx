@@ -1,36 +1,24 @@
 import { SearchBar } from "@/components/search-bar";
 import { LoadingSkeleton, Results } from "@/components/results";
 import { Suspense } from "react";
+import { Sidebar } from "@/components/sidebar";
+import { redirect } from "next/navigation";
 
-export default async function SearchPage({ searchParams }: { searchParams: Promise<{ [key: string]: string | string[] | undefined }> }) {
+export default async function SearchPage({ searchParams }: { searchParams: Promise<{ [key: string]: string | undefined }> }) {
   const s = await searchParams;
-  const query = s.q as string;
+  const query = s.q;
+  const sessionId = s.session;
 
-  if (!query) {
-    return (
-      <main className="min-h-screen bg-background text-foreground">
-        <div className="border-b">
-          <div className="max-w-5xl mx-auto p-4">
-            <SearchBar />
-          </div>
-        </div>
-        <div className="max-w-5xl mx-auto p-6 flex items-center justify-center">
-          <p className="text-muted-foreground">Please enter a search query</p>
-        </div>
-      </main>
-    );
+  if (!query && !sessionId) {
+    return redirect("/")
   }
 
   return (
     <Suspense fallback={<LoadingSkeleton />}>
-      <main className="min-h-screen bg-background text-foreground">
-        <div className="border-b">
-          <div className="max-w-5xl mx-auto p-4">
-            <SearchBar />
-          </div>
-        </div>
-        <div className="max-w-5xl mx-auto p-6">
-          <Results initialQuery={query} />
+      <main className="flex min-h-screen bg-background text-foreground">
+        <Sidebar />
+        <div className="flex-1 p-6 overflow-auto">
+          <Results initialQuery={query} sessionId={sessionId} />
         </div>
       </main>
     </Suspense>

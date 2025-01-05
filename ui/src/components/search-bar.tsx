@@ -4,14 +4,20 @@ import { useRouter } from 'next/navigation'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Search } from 'lucide-react'
+import { useSession } from '@/hooks'
 
 export function SearchBar() {
   const router = useRouter()
+  const { createNewSession } = useSession()
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     const formData = new FormData(e.currentTarget)
     const query = formData.get('query')?.toString()
+
+    e.currentTarget.querySelector('button')?.setAttribute('disabled', 'true')
+
+    const session = await createNewSession()
 
     if (!query?.trim()) return
 
@@ -19,7 +25,8 @@ export function SearchBar() {
     const historyItem = {
       query: query.trim(),
       timestamp: Date.now(),
-      url: `/search?q=${encodeURIComponent(query.trim())}`
+      url: `/search?q=${encodeURIComponent(query.trim())}&session=${session.id}`,
+      sessionId: session.id
     }
 
     const history = JSON.parse(localStorage.getItem('searchHistory') || '[]')
@@ -29,7 +36,7 @@ export function SearchBar() {
     )
 
     // Navigate to results
-    router.push(`/search?q=${encodeURIComponent(query.trim())}`)
+    router.push(historyItem.url)
   }
 
   return (
