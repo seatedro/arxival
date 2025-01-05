@@ -10,7 +10,7 @@ type ResultsProps = {
 const BACKEND_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
-function LoadingSkeleton() {
+export function LoadingSkeleton() {
   return (
     <div className="space-y-8">
       {/* Title skeleton */}
@@ -70,6 +70,7 @@ export function Results({ initialQuery }: ResultsProps) {
       });
 
       sse.addEventListener("error", (event) => {
+        //@ts-ignore
         const data = JSON.parse(event.data);
         setError(data.message);
         setIsLoading(false);
