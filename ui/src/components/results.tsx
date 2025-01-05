@@ -274,9 +274,6 @@ export function Results({ initialQuery, sessionId }: ResultsProps) {
           );
         })}
       </div>      <div className="space-y-2">
-        {initialQuery && (
-          <h1 className="text-2xl font-bold">Results for "{initialQuery}"</h1>
-        )}
 
         {/* Timing info */}
         {liveMetadata?.timing && (

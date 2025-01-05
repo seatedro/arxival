@@ -3,21 +3,22 @@ import { NextRequest } from "next/server";
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const userId = req.headers.get("X-User-Id");
 
   try {
-    const session = await getSession(params.id);
+    const p = await params;
+    const session = await getSession(p.id);
     if (!session) {
       return Response.json({ error: "Session not found" }, { status: 404 });
     }
 
-    if (userId && !(await verifySessionAccess(params.id, userId))) {
+    if (userId && !(await verifySessionAccess(p.id, userId))) {
       return Response.json({ error: "Unauthorized" }, { status: 403 });
     }
 
-    const sessionMessages = await getSessionMessages(params.id);
+    const sessionMessages = await getSessionMessages(p.id);
 
     return Response.json(sessionMessages);
   } catch (error) {
