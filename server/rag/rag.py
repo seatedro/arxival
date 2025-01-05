@@ -1,6 +1,6 @@
 import os
 import re
-from typing import Any, List, Dict, Optional, Set, Tuple
+from typing import Any, AsyncGenerator, List, Dict, Optional, Set, Tuple
 import chromadb
 from chromadb.config import Settings
 import logging
@@ -336,7 +336,7 @@ Format your response as a series of clear paragraphs that flow together naturall
 
         return figure_numbers
 
-    async def generate(self, query: str) -> StructuredResponse:
+    async def generate(self, query: str) -> AsyncGenerator[Dict[str, any], None]:
         """Generate structured response with section-aware citations"""
         start_time = time.time()
         contexts, retrieval_timing = await self.retrieve(query)
@@ -344,8 +344,10 @@ Format your response as a series of clear paragraphs that flow together naturall
         generation_start = time.time()
         prompt = self._build_prompt(query, contexts)
 
+        paragraphs = []
+
         # Request structured output using GPT's parse mode
-        response = self.embed_client.beta.chat.completions.parse(
+        with self.embed_client.beta.chat.completions.stream(
             model="gpt-4o-mini",
             messages=[
                 {
@@ -361,21 +363,56 @@ Format your response as a series of clear paragraphs that flow together naturall
                 {"role": "user", "content": prompt},
             ],
             response_format=StructuredResponse,
-        )
+        ) as stream:
+            for event in stream:
+                if event.type == "content.delta":
+                    if event.parsed is not None:
+                        delta = event.parsed
 
-        response_data = response.choices[0].message.parsed
+                        if isinstance(delta, dict) and "paragraphs" in delta:
+                            if len(delta["paragraphs"]) > len(paragraphs):
+                                print("yielding paragraph")
+                                paragraphs = delta["paragraphs"]
+                                yield {"type": "paragraph", "data": delta}
+                    else:
+                        yield {
+                            "type": "start",
+                            "data": "Starting the stream from OpenAI",
+                        }
 
-        if not response_data:
-            raise Exception
+                elif event.type == "content.done":
+                    generation_time = (time.time() - generation_start) * 1000
+                    total_time = (time.time() - start_time) * 1000
 
-        generation_time = (time.time() - generation_start) * 1000
-        total_time = (time.time() - start_time) * 1000
+                    response_data = event.parsed
+                    response_data.metadata.timing = TimingStats(
+                        retrieval_ms=retrieval_timing.retrieval_ms,
+                        embedding_ms=retrieval_timing.embedding_ms,
+                        generation_ms=generation_time,
+                        total_ms=total_time,
+                    )
 
-        response_data.metadata.timing = TimingStats(
-            retrieval_ms=retrieval_timing.retrieval_ms,
-            embedding_ms=retrieval_timing.embedding_ms,
-            generation_ms=generation_time,
-            total_ms=total_time,
-        )
+                    yield {
+                        "type": "done",
+                        "data": response_data.model_dump_json(),
+                    }
 
-        return response_data
+                elif event.type == "error":
+                    yield {"type": "error", "data": {"message": str(event.error)}}
+
+        # response_data = response.choices[0].message.parsed
+        #
+        # if not response_data:
+        #     raise Exception
+        #
+        # generation_time = (time.time() - generation_start) * 1000
+        # total_time = (time.time() - start_time) * 1000
+        #
+        # response_data.metadata.timing = TimingStats(
+        #     retrieval_ms=retrieval_timing.retrieval_ms,
+        #     embedding_ms=retrieval_timing.embedding_ms,
+        #     generation_ms=generation_time,
+        #     total_ms=total_time,
+        # )
+        #
+        # return response_data
