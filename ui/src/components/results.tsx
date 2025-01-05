@@ -1,75 +1,164 @@
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
-import type { Response } from '@/types/response'
+"use client";
 
-export function Results({
-  response,
-  initialQuery
-}: {
-  response: Response
-  initialQuery: string
-}) {
+import { useEffect, useState } from "react";
+import { type ResponseParagraph, type TimingStats } from "@/types/response";
+import { Skeleton } from "./ui/skeleton";
+
+type ResultsProps = {
+  initialQuery: string;
+};
+const BACKEND_URL =
+  process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+
+function LoadingSkeleton() {
+  return (
+    <div className="space-y-8">
+      {/* Title skeleton */}
+      <div className="space-y-2">
+        <Skeleton className="h-8 w-64" />
+        <Skeleton className="h-4 w-48" />
+      </div>
+
+      {/* Content sections skeleton */}
+      <div className="space-y-6">
+        {[...Array(3)].map((_, i) => (
+          <div
+            key={i}
+            className="relative pl-4 border-l-2 border-primary/20 space-y-3"
+          >
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-[95%]" />
+            <Skeleton className="h-4 w-[90%]" />
+            <div className="mt-2 space-x-2">
+              <Skeleton className="h-3 w-32 inline-block" />
+              <Skeleton className="h-3 w-32 inline-block" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function Results({ initialQuery }: ResultsProps) {
+  const [paragraphs, setParagraphs] = useState<ResponseParagraph[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [timing, setTiming] = useState<Partial<TimingStats>>({});
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchStream = () => {
+      setIsLoading(true);
+      setParagraphs([]);
+      setError(null);
+
+      const sse = new EventSource(
+        `${BACKEND_URL}/api/query/stream?q=${encodeURIComponent(initialQuery)}`,
+      );
+
+      sse.addEventListener("paragraph", (event) => {
+        const data = JSON.parse(event.data);
+        setParagraphs(data.paragraphs);
+      });
+
+      sse.addEventListener("done", (event) => {
+        const data = JSON.parse(event.data);
+        setTiming(data.metadata.timing);
+        setIsLoading(false);
+        setParagraphs(data.paragraphs);
+        sse.close();
+      });
+
+      sse.addEventListener("error", (event) => {
+        const data = JSON.parse(event.data);
+        setError(data.message);
+        setIsLoading(false);
+        sse.close();
+      });
+
+      return () => {
+        sse.close();
+      };
+    };
+
+    fetchStream();
+  }, [initialQuery]);
+
   return (
     <div className="space-y-6">
       <div className="space-y-2">
         <h1 className="text-2xl font-bold">Results for "{initialQuery}"</h1>
-        <div className="text-sm text-muted-foreground">
-          {response.metadata.papers_cited} papers cited ·
-          {response.metadata.figures_used} figures ·
-          {response.metadata.overall_confidence.toFixed(2)} confidence
-        </div>
+
+        {/* Timing info */}
+        {Object.keys(timing).length > 0 && (
+          <div className="text-sm text-muted-foreground space-x-2">
+            {timing.retrieval_ms && (
+              <span>Retrieval: {Math.round(timing.retrieval_ms)}ms</span>
+            )}
+            {timing.embedding_ms && (
+              <span>• Embedding: {Math.round(timing.embedding_ms)}ms</span>
+            )}
+            {timing.generation_ms && (
+              <span>• Generation: {Math.round(timing.generation_ms)}ms</span>
+            )}
+            {timing.total_ms && (
+              <span>• Total: {Math.round(timing.total_ms)}ms</span>
+            )}
+          </div>
+        )}
       </div>
 
-      <Accordion type="single" collapsible className="w-full">
-        {response.sections.map((section, index) => (
-          <AccordionItem key={index} value={`section-${index}`}>
-            <AccordionTrigger>
-              {section.type.charAt(0).toUpperCase() + section.type.slice(1)}
-            </AccordionTrigger>
-            <AccordionContent>
-              <div className="prose dark:prose-invert max-w-none">
-                <p>{section.content}</p>
-                {section.figures.map((figure, figIndex) => (
+      {/* Error state */}
+      {error && (
+        <div className="p-4 bg-destructive/10 text-destructive rounded-md">
+          {error}
+        </div>
+      )}
+
+      {/* Loading state */}
+      {isLoading && paragraphs.length === 0 && <LoadingSkeleton />}
+
+      {/* Results */}
+      <div className="space-y-6">
+        {paragraphs.map((paragraph, index) => (
+          <div key={index} className="prose dark:prose-invert max-w-none">
+            <div className="relative pl-4 border-l-2 border-primary/20">
+              {/* Paragraph content */}
+              <p>{paragraph.content}</p>
+
+              {/* Citations */}
+              {paragraph.citations?.length > 0 && (
+                <div className="mt-2 text-sm text-muted-foreground">
+                  {paragraph.citations.map((citation, citIndex) => (
+                    <a
+                      key={citIndex}
+                      href={citation.paper_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-block mr-4 hover:text-primary"
+                    >
+                      [{citation.paper_id}] {citation.title}
+                    </a>
+                  ))}
+                </div>
+              )}
+
+              {/* Figures */}
+              {paragraph.figures?.length > 0 &&
+                paragraph.figures.map((figure, figIndex) => (
                   <img
                     key={figIndex}
-                    src={`/api/placeholder/${figure.width}/${figure.height}`}
+                    src={`https://i.arxival.xyz/${figure.storage_path}`}
                     alt={`Figure ${figure.figure_number}`}
-                    className="my-4"
+                    className="my-4 rounded-lg border"
+                    width={figure.width}
+                    height={figure.height}
                   />
                 ))}
-                <TooltipProvider>
-                  {section.citations.map((citation, citIndex) => (
-                    <Tooltip key={citIndex}>
-                      <TooltipTrigger asChild>
-                        <sup className="cursor-help">[{citIndex + 1}]</sup>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <div className="max-w-xs">
-                          <p className="font-semibold">{citation.title}</p>
-                          <p className="text-sm">{citation.authors.join(', ')}</p>
-                          {citation.quoted_text && (
-                            <p className="text-sm italic mt-2">"{citation.quoted_text}"</p>
-                          )}
-                        </div>
-                      </TooltipContent>
-                    </Tooltip>
-                  ))}
-                </TooltipProvider>
-              </div>
-            </AccordionContent>
-          </AccordionItem>
+            </div>
+          </div>
         ))}
-      </Accordion>
+      </div>
     </div>
-  )
+  );
 }

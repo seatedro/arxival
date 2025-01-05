@@ -1,3 +1,4 @@
+import asyncio
 import os
 import re
 from typing import Any, AsyncGenerator, List, Dict, Optional, Set, Tuple
@@ -370,15 +371,19 @@ Format your response as a series of clear paragraphs that flow together naturall
                         delta = event.parsed
 
                         if isinstance(delta, dict) and "paragraphs" in delta:
+                            delta["paragraphs"] = [
+                                p for p in delta["paragraphs"] if p != {}
+                            ]
                             if len(delta["paragraphs"]) > len(paragraphs):
-                                print("yielding paragraph")
                                 paragraphs = delta["paragraphs"]
-                                yield {"type": "paragraph", "data": delta}
+                                yield {"event": "paragraph", "data": json.dumps(delta)}
+                                await asyncio.sleep(0.01)
                     else:
                         yield {
-                            "type": "start",
+                            "event": "start",
                             "data": "Starting the stream from OpenAI",
                         }
+                        await asyncio.sleep(0.01)
 
                 elif event.type == "content.done":
                     generation_time = (time.time() - generation_start) * 1000
@@ -393,26 +398,9 @@ Format your response as a series of clear paragraphs that flow together naturall
                     )
 
                     yield {
-                        "type": "done",
+                        "event": "done",
                         "data": response_data.model_dump_json(),
                     }
 
                 elif event.type == "error":
-                    yield {"type": "error", "data": {"message": str(event.error)}}
-
-        # response_data = response.choices[0].message.parsed
-        #
-        # if not response_data:
-        #     raise Exception
-        #
-        # generation_time = (time.time() - generation_start) * 1000
-        # total_time = (time.time() - start_time) * 1000
-        #
-        # response_data.metadata.timing = TimingStats(
-        #     retrieval_ms=retrieval_timing.retrieval_ms,
-        #     embedding_ms=retrieval_timing.embedding_ms,
-        #     generation_ms=generation_time,
-        #     total_ms=total_time,
-        # )
-        #
-        # return response_data
+                    yield {"event": "error", "data": {"message": str(event.error)}}
