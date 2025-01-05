@@ -133,3 +133,12 @@ export async function getSessionMessages(
     .where(eq(messages.sessionId, sessionId))
     .orderBy(messages.createdAt);
 }
+
+export async function makeSessionPublic(sessionId: string): Promise<void> {
+  await db
+    .update(sessions)
+    .set({
+      isPublic: true,
+    })
+    .where(eq(sessions.id, sessionId));
+}
