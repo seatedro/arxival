@@ -4,6 +4,7 @@ import { SearchBar } from '@/components/search-bar'
 import { Results } from '@/components/results'
 import { Skeleton } from '@/components/ui/skeleton'
 
+export const maxDuration = 60;
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000'
 
 async function SearchResults({ query }: { query: string }) {
