@@ -30,13 +30,14 @@ async def stream_query(
         try:
             async for chunk in rag.generate(query=q):
                 if chunk["event"] == "error":
-                    yield {"event": "error", "data": chunk["data"]}
+                    print(f"error: {chunk}")
+                    yield {"event": "err", "data": chunk["data"]}
                     break
                 else:
                     yield {"event": chunk["event"], "data": chunk["data"]}
         except Exception as e:
             logger.error(f"Streaming error: {str(e)}")
-            yield {"event": "error", "data": json.dumps({"message": str(e)})}
+            yield {"event": "err", "data": json.dumps({"message": str(e)})}
 
     return EventSourceResponse(
         event_generator(),
