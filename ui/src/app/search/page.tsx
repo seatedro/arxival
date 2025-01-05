@@ -43,11 +43,12 @@ function LoadingSkeleton() {
   )
 }
 
-export default async function SearchPage({
-  searchParams
-}: {
-  searchParams: { q?: string }
-}) {
+interface SearchParams {
+  searchParams: Promise<{ q?: string; }>
+};
+
+export default async function SearchPage(props: SearchParams) {
+  const searchParams = await props.searchParams;
   const query = searchParams.q
 
   if (!query) {
