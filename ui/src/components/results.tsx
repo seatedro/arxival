@@ -251,6 +251,19 @@ export function Results({ initialQuery, sessionId }: ResultsProps) {
     }
   };
 
+  if (session && user && !session.isPublic && session.userId !== user.id) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 space-y-4">
+        <div className="bg-secondary/50 p-8 rounded-lg text-center space-y-4 max-w-md">
+          <h2 className="text-xl font-semibold">Private Conversation</h2>
+          <p className="text-muted-foreground">
+            This conversation is private and can only be viewed if it's set to public!
+          </p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       <div className="space-y-6">
