@@ -7,9 +7,9 @@ from functools import lru_cache
 class Settings(BaseSettings, extra="allow"):
     ENV: str = "dev"
     ALLOWED_ORIGINS: List[str] = (
-        ["http://localhost:3000", "https://arxival.xyz"]
+        ["http://localhost:3000", "https://www.arxival.xyz"]
         if ENV == "dev"
-        else ["https://arxival.xyz"]
+        else ["https://www.arxival.xyz"]
     )
     CHROMADB_TOKEN: str = os.getenv("CHROMADB_TOKEN", "dummy")
     CHROMADB_SERVER: str = os.getenv("CHROMADB_SERVER", "http://localhost:8080")
