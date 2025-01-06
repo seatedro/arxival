@@ -110,6 +110,7 @@ export function Results({ initialQuery, sessionId }: ResultsProps) {
   const startStream = (query: string, sessionId: string, followUp: boolean = false) => {
     setIsLoading(true);
     setLiveParagraphs([]);
+    setLiveMetadata(null);
     setError(null);
 
     // Add query to messages immediately
@@ -289,8 +290,8 @@ export function Results({ initialQuery, sessionId }: ResultsProps) {
             </div>
           );
         })}
-      </div>      <div className="space-y-2">
-
+      </div>
+      <div className="space-y-2">
         {/* Timing info */}
         {liveMetadata?.timing && (
           <div className="text-sm text-muted-foreground space-x-2">
