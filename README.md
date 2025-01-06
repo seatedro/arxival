@@ -20,7 +20,7 @@ a research paper answering engine focused on openly accessible ML papers. give i
 
 1. clone the repo:
 ```bash
-git clone https://github.com/yourusername/arxival.git
+git clone https://github.com/seatedro/arxival.git
 cd arxival
 ```
 
