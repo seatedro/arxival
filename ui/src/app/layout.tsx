@@ -41,7 +41,7 @@ export default function RootLayout({
           {children}
           <ThemeToggle />
           <div
-            className="-z-[1] pointer-events-none absolute inset-0 bg-repeat bg-[size:180px]"
+            className="-z-[1] pointer-events-none fixed inset-0 bg-repeat bg-[size:180px]"
             style={{ backgroundImage: "url(/noise.png)" }}
           ></div>
         </ThemeProvider>
