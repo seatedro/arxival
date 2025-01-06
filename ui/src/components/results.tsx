@@ -24,6 +24,7 @@ import {
   TooltipTrigger,
 } from "./ui/tooltip";
 import { motion, AnimatePresence } from "framer-motion";
+import LaTeXProcessor from "./latex";
 
 type ResultsProps = {
   initialQuery?: string;
@@ -366,7 +367,7 @@ export function Results({ initialQuery, sessionId }: ResultsProps) {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.3, delay: index * 0.1 }}
                   >
-                    {paragraph.content}
+                    <LaTeXProcessor text={paragraph.content} />
                   </motion.p>
                 </AnimatePresence>
 

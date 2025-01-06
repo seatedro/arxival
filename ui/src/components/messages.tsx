@@ -7,6 +7,7 @@ import {
 } from "./ui/tooltip";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "./ui/button";
+import LaTeXProcessor from "./latex";
 
 type MessageDisplayProps = {
   message: Message;
@@ -50,14 +51,14 @@ export function ResponseMessage({ message }: MessageDisplayProps) {
         <div key={index} className="prose dark:prose-invert max-w-none">
           <div className="relative pl-4 border-l-2 border-primary/20">
             <AnimatePresence>
-              <motion.p
+              <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.3, delay: index * 0.1 }}
                 className="leading-relaxed text-foreground/90 text-sm sm:text-md md:text-lg"
               >
-                {paragraph.content}
-              </motion.p>
+                <LaTeXProcessor text={paragraph.content} />
+              </motion.div>
             </AnimatePresence>
 
             {paragraph.citations?.length > 0 && (
