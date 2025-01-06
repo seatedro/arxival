@@ -16,8 +16,8 @@ const sourceSerif = Source_Serif_4({
 });
 
 export const metadata: Metadata = {
-  title: "Research Paper Search",
-  description: "Search and analyze research papers",
+  title: "ArXival | ML Research Assistant",
+  description: "Search and analyze ML research papers",
 };
 
 export default function RootLayout({
