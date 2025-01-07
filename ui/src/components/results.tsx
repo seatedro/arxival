@@ -248,6 +248,9 @@ export function Results({ initialQuery, sessionId }: ResultsProps) {
     if (!session) return;
 
     try {
+      const url = `${window.location.origin}/search?session=${session.id}`;
+      await navigator.clipboard.writeText(url);
+
       if (!session.isPublic) {
         await fetch(`/api/sessions/${session.id}`, {
           method: "PATCH",
@@ -255,9 +258,6 @@ export function Results({ initialQuery, sessionId }: ResultsProps) {
           body: JSON.stringify({ isPublic: true }),
         });
       }
-
-      const url = `${window.location.origin}/search?session=${session.id}`;
-      await navigator.clipboard.writeText(url);
 
       toast({
         title: "Chat shared!",
