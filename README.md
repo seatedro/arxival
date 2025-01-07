@@ -1,5 +1,7 @@
 # arXival 📚
 
+![ArXival Banner](./arxival_header.png)
+
 a research paper answering engine focused on openly accessible ML papers. give it a query, get back ai-generated responses with citations and figures from relevant papers.
 
 ## what's under the hood 🔧

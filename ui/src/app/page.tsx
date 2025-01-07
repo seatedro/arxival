@@ -28,6 +28,17 @@ export default function HomePage() {
       <div className="w-full max-w-3xl mt-12">
         <History />
       </div>
+      <div className="fixed bottom-0 right-0 p-2 text-sm text-muted-foreground backdrop-blur-sm bg-background/50 rounded-tl-lg">
+        made by{" "}
+        <a
+          href="https://seated.ro"
+          target="_blank"
+          rel="noopener"
+          className="hover:text-foreground transition-colors text-primary hover:underline"
+        >
+          @seatedro
+        </a>
+      </div>
     </main>
   );
 }
