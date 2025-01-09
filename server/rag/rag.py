@@ -185,7 +185,7 @@ class RAGPipeline:
         self.collection.upsert(vectors)
 
     async def retrieve(
-        self, query: str, top_k: int = 4
+        self, query: str, top_k: int = 3
     ) -> Tuple[List[RetrievedContext], TimingStats]:
         """Retrieve and reconstruct contexts"""
         start_time = time.time()
