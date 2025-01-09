@@ -1,44 +1,49 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import type { User, Session, Message } from "@/types";
 
 export function useUser() {
   const [user, setUser] = useState<User>();
   const [loading, setLoading] = useState(true);
+  const initUser = useCallback(async () => {
+    // Try to get existing user ID from localStorage
+    let userId = localStorage.getItem("userId");
+    if (!userId) {
+      userId = crypto.randomUUID();
+      localStorage.setItem("userId", userId);
+    }
+
+    try {
+      const response = await fetch("/api/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: userId,
+          userAgent: navigator.userAgent,
+        }),
+      });
+
+      if (!response.ok) throw new Error("Failed to initialize user");
+
+      const user = await response.json();
+      setUser(user);
+    } catch (error) {
+      console.error("Failed to initialize user:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    const initUser = async () => {
-      // Try to get existing user ID from localStorage
-      let userId = localStorage.getItem("userId");
-      if (!userId) {
-        userId = crypto.randomUUID();
-        localStorage.setItem("userId", userId);
-      }
-
-      try {
-        const response = await fetch("/api/users", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            id: userId,
-            userAgent: navigator.userAgent,
-          }),
-        });
-
-        if (!response.ok) throw new Error("Failed to initialize user");
-
-        const user = await response.json();
-        setUser(user);
-      } catch (error) {
-        console.error("Failed to initialize user:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     initUser();
   }, []);
 
-  return { user, loading };
+  return useMemo(
+    () => ({
+      user,
+      loading,
+    }),
+    [user, loading],
+  );
 }
 
 export function useSession() {

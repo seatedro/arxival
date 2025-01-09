@@ -1,7 +1,10 @@
 from typing import Set, List
-import chromadb
-from chromadb.config import Settings
+from pinecone import Pinecone
 import logging
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -9,31 +12,18 @@ class ProcessedPaperTracker:
     """Tracks which papers have already been processed using ChromaDB metadata"""
 
     def __init__(self, chromadb_host: str, chromadb_token: str, collection_name: str = "papers"):
-        self.client = chromadb.HttpClient(
-            host=chromadb_host,
-            settings=Settings(
-                chroma_client_auth_provider="chromadb.auth.token_authn.TokenAuthClientProvider",
-                chroma_client_auth_credentials=chromadb_token
-            )
+        self.client = Pinecone(
+            api_key=os.getenv("PINECONE_API_KEY"),
         )
-        self.collection = self.client.get_or_create_collection(name=collection_name)
+        self.collection = self.client.Index("papers", host=os.getenv("PINECONE_HOST") or "")
 
     def get_processed_papers(self) -> Set[str]:
         """Get set of all paper IDs that have been processed"""
         try:
             # Query collection metadata to get unique paper_ids
-            results = self.collection.get(
-                include=['metadatas'],
-                where={"paper_id": {"$exists": True}}  # only get entries with paper_id
-            )
+            results = self.collection.describe_index_stats()
 
-            # Extract unique paper IDs from metadata
-            paper_ids = set()
-            for metadata in results['metadatas']:
-                if metadata and 'paper_id' in metadata:
-                    paper_ids.add(metadata['paper_id'])
-
-            return paper_ids
+            return results.total_vector_count
 
         except Exception as e:
             logger.error(f"Error getting processed papers: {str(e)}")

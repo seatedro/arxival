@@ -2,8 +2,7 @@ import asyncio
 import os
 import re
 from typing import Any, AsyncGenerator, List, Dict, Optional, Set, Tuple
-import chromadb
-from chromadb.config import Settings
+import pinecone
 import logging
 from dataclasses import dataclass
 from openai import OpenAI
@@ -24,8 +23,8 @@ logger = logging.getLogger(__name__)
 
 TEI_SERVER = os.getenv("TEI_SERVER") or "http://localhost:8000"
 TEI_TOKEN = os.getenv("TEI_TOKEN") or "dummy_token"
-CHROMADB_TOKEN = os.getenv("CHROMADB_TOKEN") or "dummy"
-CHROMADB_SERVER = os.getenv("CHROMADB_SERVER") or "http://localhost:8080"
+PINECONE_API_KEY = os.getenv("PINECONE_API_KEY") or "dummy"
+PINECONE_HOST = os.getenv("PINECONE_HOST") or "http://localhost:9090"
 
 
 def sanitize_metadata(value: Any) -> Any:
@@ -78,17 +77,13 @@ class GeneratedResponse:
 class RAGPipeline:
     def __init__(self, collection_name: str = "papers", batch_size: int = 32):
         # Initialize Chroma client with auth
-        self.chroma_client = chromadb.HttpClient(
-            host=CHROMADB_SERVER,
-            settings=Settings(
-                chroma_client_auth_provider="chromadb.auth.token_authn.TokenAuthClientProvider",
-                chroma_client_auth_credentials=CHROMADB_TOKEN,
-            ),
+        self.pinecone_client = pinecone.Pinecone(
+            api_key=PINECONE_API_KEY,
         )
 
         # Get or create collection
-        self.collection = self.chroma_client.get_or_create_collection(
-            name=collection_name, metadata={"hnsw:space": "cosine"}
+        self.collection = self.pinecone_client.Index(
+            name=collection_name, host=PINECONE_HOST
         )
 
         # Setup embedding client
@@ -96,7 +91,7 @@ class RAGPipeline:
 
         self.batch_size = batch_size
 
-        self.image_store = R2ImageStore("arxival")
+        self.image_store = R2ImageStore("arxival-2")
 
     def _batch_encode(self, texts: List[str]) -> Tuple[List[List[float]], float]:
         """Generate embeddings in batches"""
@@ -176,9 +171,18 @@ class RAGPipeline:
         embeddings, _ = self._batch_encode(texts)
 
         # Add to Chroma
-        self.collection.add(
-            embeddings=embeddings, documents=texts, ids=ids, metadatas=metadata
-        )
+        vectors = [
+            {
+                "id": ids[i],
+                "values": embeddings[i],
+                "metadata": {
+                    "text": texts[i],
+                    **metadata[i]
+                }
+            }
+            for i in range(len(ids))
+        ]
+        self.collection.upsert(vectors)
 
     async def retrieve(
         self, query: str, top_k: int = 4
@@ -191,15 +195,17 @@ class RAGPipeline:
 
         retrieval_start = time.time()
         results = self.collection.query(
-            query_embeddings=[query_embedding],
-            n_results=top_k,
-            include=["documents", "metadatas", "distances"],
+            vector=query_embedding,
+            top_k=top_k,
+            include_metadata=True,
         )
 
         contexts = []
-        for text, meta, score in zip(
-            results["documents"][0], results["metadatas"][0], results["distances"][0]
-        ):
+        for match in results.matches:
+            meta = match["metadata"]
+            text = meta["text"]
+            chunk_meta = json.loads(meta["chunk_metadata"])
+            paper_meta = json.loads(meta["paper_metadata"])
             # Parse JSON-encoded metadata
             chunk_meta = json.loads(meta["chunk_metadata"])
             paper_meta = json.loads(meta["paper_metadata"])
@@ -235,7 +241,7 @@ class RAGPipeline:
                     chunk=chunk,
                     paper_metadata=paper_meta,
                     section=section,
-                    score=1.0 - score,
+                    score=1.0 - match["score"],
                 )
             )
 

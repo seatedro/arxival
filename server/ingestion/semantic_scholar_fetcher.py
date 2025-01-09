@@ -11,6 +11,7 @@ class SemanticScholarFetcher:
     """Fetches papers from Semantic Scholar API with pagination support"""
 
     BASE_URL = "https://api.semanticscholar.org/graph/v1/paper/search/bulk"
+    BASE_SINGLE = "https://api.semanticscholar.org/graph/v1/paper"
 
     def __init__(self, min_citations: int = 100, year_from: int = 2017, year_to: int | None = None):
         self.min_citations = min_citations
@@ -28,11 +29,18 @@ class SemanticScholarFetcher:
         external_ids = paper.get('externalIds', {})
 
         # Try to identify source and get proper URL
-        if 'DOI' in external_ids:
+        if 'ArXiv' in external_ids:
+            return {
+                'source': 'arxiv',
+                'source_id': external_ids['ArXiv'],
+                'pdf_url': f"https://arxiv.org/pdf/{external_ids['ArXiv']}.pdf",
+                'paper_url': f"https://arxiv.org/abs/{external_ids['ArXiv']}",
+            }
+        elif 'DOI' in external_ids:
             return {
                 'source': 'doi',
                 'source_id': external_ids['DOI'],
-                'pdf_url': paper['openAccessPdf']['url'],
+                'pdf_url': paper['openAccessPdf']['url'] if 'openAccessPdf' in paper and paper['openAccessPdf'] else None,
                 'paper_url': f'https://doi.org/{external_ids["DOI"]}'
             }
         else:
@@ -40,13 +48,39 @@ class SemanticScholarFetcher:
             return {
                 'source': 'other',
                 'source_id': paper['paperId'],
-                'pdf_url': paper['openAccessPdf']['url'],
+                'pdf_url': paper['openAccessPdf']['url'] if 'openAccessPdf' in paper and paper['openAccessPdf'] else None,
                 'paper_url': paper['url']
             }
 
+    async def fetch_single_paper(self, paper_id: str) -> Dict:
+        """Fetch single paper by ID"""
+        try:
+            params = {
+                'fields': ','.join(self.fields),
+            }
+            papers = []
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f"{self.BASE_SINGLE}/{paper_id}", params=params) as resp:
+                    if resp.status != 200:
+                        logger.error(f"API error: {resp.status}")
+                        return {}
+
+                    data = await resp.json()
+                    paper = self._process_paper(data)
+                    if paper:
+                        self.paper_cache[paper['id']] = paper
+                        papers.append(paper)
+
+            return papers[0]
+
+        except Exception as e:
+            logger.error(f"Error fetching paper {paper_id}: {str(e)}")
+            return {}
+
     async def fetch_papers(self,
-                          query: Optional[str] = "machine learning",
+                          query: Optional[str] = "",
                           paper_ids: Optional[List[str]] = None,
+                          field: Optional[str] = "Computer Science",
                           max_results: int = 100) -> List[Dict]:
         """
         Fetch papers from Semantic Scholar based on query or paper IDs.
@@ -54,13 +88,13 @@ class SemanticScholarFetcher:
         """
         try:
             params = {
-                'query': query or 'machine learning',
+                'query': query or '',
                 'limit': min(max_results, 1000),
                 'fields': ','.join(self.fields),
                 'sort': 'citationCount:desc',
-                'openAccessPdf': '',
+                # 'openAccessPdf': '',
                 'year': f'{self.year_from}' if not self.year_to else f'{self.year_from}-{self.year_to}',
-                'fieldsOfStudy': 'Computer Science',
+                'fieldsOfStudy': field,
                 'minCitationCount': str(self.min_citations)
             }
 
@@ -102,11 +136,17 @@ class SemanticScholarFetcher:
     def _process_paper(self, paper: Dict) -> Optional[Dict]:
         """Process raw API response into standard format"""
         try:
-            if not paper.get('openAccessPdf'):
-                return None
 
 
             source_info = self._get_source_info(paper)
+
+            if not paper.get('openAccessPdf') and source_info.get("source") != "arxiv":
+                return None
+
+            if os.path.exists(f"./papers/{paper['paperId']}.pdf"):
+                logger.info(f"Paper {paper['paperId']} {paper['title']} already downloaded, skipping...")
+                return None
+
 
             return {
                 "id": paper.get('paperId'),
@@ -166,7 +206,12 @@ class SemanticScholarFetcher:
                 logger.info(f"Paper {paper_id} already downloaded")
                 return filepath
 
-            async with aiohttp.ClientSession() as session:
+
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+            }
+
+            async with aiohttp.ClientSession(headers=headers) as session:
                 async with session.get(pdf_url) as resp:
                     if resp.status != 200:
                         raise ValueError(f"Failed to download PDF: {resp.status}")

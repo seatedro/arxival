@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Share } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -76,8 +76,136 @@ export function Results({ initialQuery, sessionId }: ResultsProps) {
   );
   const { toast } = useToast();
 
+  const startStream = useCallback(
+    (query: string, sessionId: string, followUp: boolean = false) => {
+      setIsLoading(true);
+      setLiveParagraphs([]);
+      setLiveMetadata(null);
+      setError(null);
+
+      // Add query to messages immediately
+      const queryMessage: Message = {
+        id: crypto.randomUUID(),
+        sessionId,
+        type: "query",
+        content: query,
+        createdAt: new Date(),
+        metadata: null,
+      };
+      setMessages((prev) => [...prev, queryMessage]);
+
+      const sse = new EventSource(
+        followUp
+          ? `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/query/followup/stream?` +
+            `q=${encodeURIComponent(query)}&session_id=${sessionId}`
+          : `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/query/stream?` +
+            `q=${encodeURIComponent(query)}`,
+      );
+
+      sse.addEventListener("paragraph", (event) => {
+        const data = JSON.parse(event.data);
+        setLiveParagraphs(data.paragraphs);
+
+        // Update response in messages
+        setMessages((prev) => {
+          const lastMessage = prev[prev.length - 1];
+          if (lastMessage?.type === "response") {
+            return [
+              ...prev.slice(0, -1),
+              {
+                ...lastMessage,
+                content: JSON.stringify(data.paragraphs),
+              },
+            ];
+          } else {
+            return [
+              ...prev,
+              {
+                id: crypto.randomUUID(),
+                sessionId,
+                type: "response",
+                content: JSON.stringify(data.paragraphs),
+                metadata: JSON.stringify(data.metadata),
+                createdAt: new Date(),
+              },
+            ];
+          }
+        });
+      });
+
+      sse.addEventListener("done", async (event) => {
+        const data = JSON.parse(event.data);
+        setIsLoading(false);
+        setLiveParagraphs(data.paragraphs);
+        setLiveMetadata(data.metadata);
+        try {
+          const queryMessage = await fetch("/api/messages", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-User-Id": user?.id || "",
+            },
+            body: JSON.stringify({
+              sessionId,
+              type: "query",
+              content: query,
+            }),
+          }).then((r) => r.json());
+
+          const responseMessage = await fetch("/api/messages", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-User-Id": user?.id || "",
+            },
+            body: JSON.stringify({
+              sessionId,
+              type: "response",
+              content: JSON.stringify(data.paragraphs),
+              metadata: JSON.stringify(data.metadata),
+            }),
+          }).then((r) => r.json());
+
+          setMessages((prev) => {
+            const lastMessage = prev[prev.length - 1];
+            return [
+              ...prev.slice(0, -1),
+              {
+                ...lastMessage,
+                content: JSON.stringify(data.paragraphs),
+              },
+            ];
+          });
+        } catch (error) {
+          console.error("Failed to save messages:", error);
+          toast({
+            title: "Error",
+            description: "Failed to save chat history",
+            variant: "destructive",
+          });
+        }
+        sse.close();
+      });
+
+      sse.addEventListener("err", (event) => {
+        //@ts-ignore
+        const data = JSON.parse(event.data);
+        setError(data.message);
+        setIsLoading(false);
+        sse.close();
+      });
+
+      return () => {
+        sse.close();
+      };
+    },
+    [user],
+  );
+
   useEffect(() => {
     if (!user || !sessionId) return;
+
+    let ignore = false;
 
     const loadSession = async () => {
       try {
@@ -95,7 +223,7 @@ export function Results({ initialQuery, sessionId }: ResultsProps) {
           messagesResponse.json(),
         ]);
 
-        console.log(sessionData, messagesData);
+        if (ignore) return;
 
         setSession(sessionData);
         setIsShared(sessionData.userId === user.id);
@@ -107,6 +235,7 @@ export function Results({ initialQuery, sessionId }: ResultsProps) {
           startStream(initialQuery, sessionId);
         }
       } catch (error) {
+        if (ignore) return;
         console.error("Session initialization failed:", error);
         setError("Failed to initialize chat session");
         setIsLoading(false);
@@ -114,134 +243,11 @@ export function Results({ initialQuery, sessionId }: ResultsProps) {
     };
 
     loadSession();
-  }, [user, sessionId, initialQuery]);
-
-  const startStream = (
-    query: string,
-    sessionId: string,
-    followUp: boolean = false,
-  ) => {
-    setIsLoading(true);
-    setLiveParagraphs([]);
-    setLiveMetadata(null);
-    setError(null);
-
-    // Add query to messages immediately
-    const queryMessage: Message = {
-      id: crypto.randomUUID(),
-      sessionId,
-      type: "query",
-      content: query,
-      createdAt: new Date(),
-      metadata: null,
-    };
-    setMessages((prev) => [...prev, queryMessage]);
-
-    const sse = new EventSource(
-      followUp
-        ? `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/query/followup/stream?` +
-          `q=${encodeURIComponent(query)}&session_id=${sessionId}`
-        : `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/query/stream?` +
-          `q=${encodeURIComponent(query)}`,
-    );
-
-    sse.addEventListener("paragraph", (event) => {
-      const data = JSON.parse(event.data);
-      setLiveParagraphs(data.paragraphs);
-
-      // Update response in messages
-      setMessages((prev) => {
-        const lastMessage = prev[prev.length - 1];
-        if (lastMessage?.type === "response") {
-          return [
-            ...prev.slice(0, -1),
-            {
-              ...lastMessage,
-              content: JSON.stringify(data.paragraphs),
-            },
-          ];
-        } else {
-          return [
-            ...prev,
-            {
-              id: crypto.randomUUID(),
-              sessionId,
-              type: "response",
-              content: JSON.stringify(data.paragraphs),
-              metadata: JSON.stringify(data.metadata),
-              createdAt: new Date(),
-            },
-          ];
-        }
-      });
-    });
-
-    sse.addEventListener("done", async (event) => {
-      const data = JSON.parse(event.data);
-      setIsLoading(false);
-      setLiveParagraphs(data.paragraphs);
-      setLiveMetadata(data.metadata);
-      try {
-        const queryMessage = await fetch("/api/messages", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-User-Id": user?.id || "",
-          },
-          body: JSON.stringify({
-            sessionId,
-            type: "query",
-            content: query,
-          }),
-        }).then((r) => r.json());
-
-        const responseMessage = await fetch("/api/messages", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-User-Id": user?.id || "",
-          },
-          body: JSON.stringify({
-            sessionId,
-            type: "response",
-            content: JSON.stringify(data.paragraphs),
-            metadata: JSON.stringify(data.metadata),
-          }),
-        }).then((r) => r.json());
-
-        setMessages((prev) => {
-          const lastMessage = prev[prev.length - 1];
-          return [
-            ...prev.slice(0, -1),
-            {
-              ...lastMessage,
-              content: JSON.stringify(data.paragraphs),
-            },
-          ];
-        });
-      } catch (error) {
-        console.error("Failed to save messages:", error);
-        toast({
-          title: "Error",
-          description: "Failed to save chat history",
-          variant: "destructive",
-        });
-      }
-      sse.close();
-    });
-
-    sse.addEventListener("err", (event) => {
-      //@ts-ignore
-      const data = JSON.parse(event.data);
-      setError(data.message);
-      setIsLoading(false);
-      sse.close();
-    });
 
     return () => {
-      sse.close();
+      ignore = true;
     };
-  };
+  }, [user, sessionId, initialQuery, startStream]);
 
   // Share button handler
   const handleShare = async () => {
@@ -412,7 +418,7 @@ export function Results({ initialQuery, sessionId }: ResultsProps) {
                     {paragraph.figures.map((figure, figIndex) => (
                       <div key={figIndex} className="rounded-lg border p-4">
                         <img
-                          src={`https://i.arxival.xyz/${figure.storage_path}`}
+                          src={`https://i2.arxival.xyz/${figure.storage_path}`}
                           alt={`Figure ${figure.figure_number}`}
                           className="rounded-lg"
                           width={figure.width}
