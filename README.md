@@ -38,8 +38,8 @@ pip install -r requirements.txt
 ```bash
 # backend (.env in server/)
 OPENAI_API_KEY=your_key
-CHROMADB_TOKEN=your_token
-CHROMADB_SERVER=your_server
+PINECONE_API_KEY=your_token
+PINECONE_HOST=your_server
 R2_ENDPOINT=your_endpoint
 R2_ACCESS_KEY_ID=your_key
 R2_SECRET_ACCESS_KEY=your_key
