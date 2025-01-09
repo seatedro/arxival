@@ -9,7 +9,7 @@ class Settings(BaseSettings, extra="allow"):
     ALLOWED_ORIGINS: List[str] = (
         ["http://localhost:3000", "https://www.arxival.xyz"]
         if ENV == "dev"
-        else ["https://www.arxival.xyz"]
+        else ["https://www.arxival.xyz", "https://s.arxival.xyz"]
     )
     CHROMADB_TOKEN: str = os.getenv("CHROMADB_TOKEN", "dummy")
     CHROMADB_SERVER: str = os.getenv("CHROMADB_SERVER", "http://localhost:8080")
