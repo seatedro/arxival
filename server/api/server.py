@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="ArXival API")
 
+print(settings.ALLOWED_ORIGINS, settings.ENV)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.ALLOWED_ORIGINS,

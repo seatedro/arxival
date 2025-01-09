@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Share } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -75,46 +75,6 @@ export function Results({ initialQuery, sessionId }: ResultsProps) {
     null,
   );
   const { toast } = useToast();
-
-  useEffect(() => {
-    if (!user || !sessionId) return;
-
-    const loadSession = async () => {
-      try {
-        const [sessionResponse, messagesResponse] = await Promise.all([
-          fetch(`/api/sessions/${sessionId}`),
-          fetch(`/api/sessions/${sessionId}/messages`),
-        ]);
-
-        if (!sessionResponse.ok || !messagesResponse.ok) {
-          throw new Error("Failed to load session");
-        }
-
-        const [sessionData, messagesData] = await Promise.all([
-          sessionResponse.json(),
-          messagesResponse.json(),
-        ]);
-
-        console.log(sessionData, messagesData);
-
-        setSession(sessionData);
-        setIsShared(sessionData.userId === user.id);
-        setMessages(messagesData);
-        setIsLoading(false);
-
-        // If this is a new session with a query, start streaming
-        if (initialQuery && messagesData.length === 0) {
-          startStream(initialQuery, sessionId);
-        }
-      } catch (error) {
-        console.error("Session initialization failed:", error);
-        setError("Failed to initialize chat session");
-        setIsLoading(false);
-      }
-    };
-
-    loadSession();
-  }, [user, sessionId, initialQuery]);
 
   const startStream = (
     query: string,
@@ -242,6 +202,53 @@ export function Results({ initialQuery, sessionId }: ResultsProps) {
       sse.close();
     };
   };
+
+  useEffect(() => {
+    if (!user || !sessionId) return;
+
+    let ignore = false;
+
+    const loadSession = async () => {
+      try {
+        const [sessionResponse, messagesResponse] = await Promise.all([
+          fetch(`/api/sessions/${sessionId}`),
+          fetch(`/api/sessions/${sessionId}/messages`),
+        ]);
+
+        if (!sessionResponse.ok || !messagesResponse.ok) {
+          throw new Error("Failed to load session");
+        }
+
+        const [sessionData, messagesData] = await Promise.all([
+          sessionResponse.json(),
+          messagesResponse.json(),
+        ]);
+
+        if (ignore) return;
+
+        setSession(sessionData);
+        setIsShared(sessionData.userId === user.id);
+        setMessages(messagesData);
+        setIsLoading(false);
+
+        // If this is a new session with a query, start streaming
+        if (initialQuery && messagesData.length === 0) {
+          startStream(initialQuery, sessionId);
+        }
+      } catch (error) {
+        if (ignore) return;
+        console.error("Session initialization failed:", error);
+        setError("Failed to initialize chat session");
+        setIsLoading(false);
+      }
+    };
+
+    loadSession();
+
+    return () => {
+      ignore = true;
+    };
+  }, [user, sessionId, initialQuery]);
 
   // Share button handler
   const handleShare = async () => {
@@ -412,7 +419,7 @@ export function Results({ initialQuery, sessionId }: ResultsProps) {
                     {paragraph.figures.map((figure, figIndex) => (
                       <div key={figIndex} className="rounded-lg border p-4">
                         <img
-                          src={`https://i.arxival.xyz/${figure.storage_path}`}
+                          src={`https://i2.arxival.xyz/${figure.storage_path}`}
                           alt={`Figure ${figure.figure_number}`}
                           className="rounded-lg"
                           width={figure.width}

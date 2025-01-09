@@ -36,7 +36,7 @@ export function ResponseMessage({ message }: MessageDisplayProps) {
           {figures.map((figure, figIndex) => (
             <div key={figIndex} className="rounded-lg border p-4">
               <img
-                src={`https://i.arxival.xyz/${figure.storage_path}`}
+                src={`https://i2.arxival.xyz/${figure.storage_path}`}
                 alt={`Figure ${figure.figure_number}`}
                 className="rounded-lg"
                 width={figure.width}

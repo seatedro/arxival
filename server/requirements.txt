@@ -15,8 +15,6 @@ build==1.2.2.post1
 cachetools==5.5.0
 certifi==2024.12.14
 charset-normalizer==3.4.1
-chroma-hnswlib==0.7.6
-chromadb==0.6.1
 click==8.1.8
 coloredlogs==15.0.1
 dataclasses-json==0.6.7
@@ -153,3 +151,4 @@ sqlalchemy[asyncio]
 aiosqlite
 alembic
 libsql-experimental
+pinecone

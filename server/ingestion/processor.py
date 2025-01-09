@@ -19,7 +19,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY") or "dummy_token"
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or "dummy_token"
 
 class PDFProcessor:
-    def __init__(self, chunk_size=1000, chunk_overlap=100):
+    def __init__(self, chunk_size=5000, chunk_overlap=300):
         self.llm_client = OpenAI(api_key=OPENAI_API_KEY)
         self.section_extractor = SectionExtractor()
         self.chunk_size = chunk_size

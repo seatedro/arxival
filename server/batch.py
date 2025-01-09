@@ -21,18 +21,21 @@ rich.traceback.install()
 logging.basicConfig(
     level=logging.INFO,
     format="%(message)s",
-    handlers=[RichHandler(rich_tracebacks=True)]
+    handlers=[RichHandler(rich_tracebacks=True)],
 )
 logger = logging.getLogger(__name__)
 
+
 class BatchIngester:
-    def __init__(self,
-                    fetcher: PaperFetcher | SemanticScholarFetcher = PaperFetcher(),
-                 output_dir: str = "./papers",
-                 cache_dir: str = "./cache",
-                 checkpoint_file: str = "ingestion_checkpoint.json",
-                 error_log: str = "ingestion_errors.jsonl",
-                 skip_log: str = "ingestion_skipped.jsonl"):
+    def __init__(
+        self,
+        fetcher: PaperFetcher | SemanticScholarFetcher = PaperFetcher(),
+        output_dir: str = "./papers",
+        cache_dir: str = "./cache",
+        checkpoint_file: str = "ingestion_checkpoint.json",
+        error_log: str = "ingestion_errors.jsonl",
+        skip_log: str = "ingestion_skipped.jsonl",
+    ):
         self.fetcher = fetcher
         self.processor = PDFProcessor()
         self.rag = RAGPipeline()
@@ -51,10 +54,7 @@ class BatchIngester:
         self.skipped_papers: Set[str] = set()
         if self.skip_log.exists():
             with open(self.skip_log) as f:
-                self.skipped_papers = {
-                    json.loads(line)["paper_id"]
-                    for line in f
-                }
+                self.skipped_papers = {json.loads(line)["paper_id"] for line in f}
 
         # Cache for paper metadata
         self.metadata_cache: Dict[str, dict] = {}
@@ -81,7 +81,7 @@ class BatchIngester:
             "paper_id": paper_id,
             "stage": stage,
             "error": str(error),
-            "traceback": traceback.format_exc()
+            "traceback": traceback.format_exc(),
         }
 
         with open(self.error_log, "a") as f:
@@ -92,7 +92,7 @@ class BatchIngester:
         skip_entry = {
             "timestamp": datetime.now().isoformat(),
             "paper_id": paper_id,
-            "reason": reason
+            "reason": reason,
         }
 
         with open(self.skip_log, "a") as f:
@@ -101,9 +101,7 @@ class BatchIngester:
         self.skipped_papers.add(paper_id)
 
     @backoff.on_exception(
-        backoff.expo,
-        (aiohttp.ClientError, asyncio.TimeoutError),
-        max_tries=3
+        backoff.expo, (aiohttp.ClientError, asyncio.TimeoutError), max_tries=3
     )
     async def _fetch_with_retry(self, paper_id: str) -> dict:
         """Fetch paper content with retry logic"""
@@ -113,12 +111,13 @@ class BatchIngester:
             self._log_error(paper_id, e, "fetch")
             raise
 
-    async def ingest_papers(self,
-                          query: Optional[str] = None,
-                          papers: Optional[list] = None,
-                          max_papers: int = 100,
-                          batch_size: int = 10,
-                          ):
+    async def ingest_papers(
+        self,
+        query: Optional[str] = None,
+        papers: Optional[list] = None,
+        max_papers: int = 100,
+        batch_size: int = 10,
+    ):
         """Batch ingest papers with progress tracking and error handling"""
 
         # Load checkpoint
@@ -126,7 +125,9 @@ class BatchIngester:
         if self.checkpoint_file.exists():
             with open(self.checkpoint_file) as f:
                 processed_ids = set(json.load(f))
-                logger.info(f"Resuming from checkpoint with {len(processed_ids)} papers")
+                logger.info(
+                    f"Resuming from checkpoint with {len(processed_ids)} papers"
+                )
 
         # Fetch or load papers
         if not papers:
@@ -137,7 +138,6 @@ class BatchIngester:
                 BarColumn(),
                 TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             ) as progress:
-
                 fetch_task = progress.add_task("Fetching papers...", total=None)
                 try:
                     papers = await self.fetcher.fetch_papers(
@@ -170,26 +170,18 @@ class BatchIngester:
             BarColumn(),
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
         ) as progress:
-
-            overall_task = progress.add_task(
-                "Overall progress",
-                total=len(papers)
-            )
+            overall_task = progress.add_task("Overall progress", total=len(papers))
 
             for i in range(0, len(papers), batch_size):
-                batch = papers[i:i + batch_size]
+                batch = papers[i : i + batch_size]
                 batch_task = progress.add_task(
-                    f"Processing batch {i//batch_size + 1}",
-                    total=len(batch)
+                    f"Processing batch {i//batch_size + 1}", total=len(batch)
                 )
 
                 tasks = []
                 for paper in batch:
-                    tasks.append(self.process_single_paper(
-                        paper,
-                        progress,
-                        batch_task
-                    ))
+                    print(f"Processing: {paper["id"]} {paper["title"]}")
+                    tasks.append(self.process_single_paper(paper, progress, batch_task))
 
                 # Process batch
                 results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -212,10 +204,7 @@ class BatchIngester:
 
                 # Rate limit between batches
                 if i + batch_size < len(papers):
-                    delay_task = progress.add_task(
-                        "Cooling down...",
-                        total=30
-                    )
+                    delay_task = progress.add_task("Cooling down...", total=30)
                     for _ in range(30):
                         await asyncio.sleep(1)
                         progress.advance(delay_task)
@@ -223,10 +212,9 @@ class BatchIngester:
 
         return len(processed_ids)
 
-    async def process_single_paper(self,
-                                 paper_metadata: dict,
-                                 progress: Progress,
-                                 parent_task: TaskID):
+    async def process_single_paper(
+        self, paper_metadata: dict, progress: Progress, parent_task: TaskID
+    ):
         """Process single paper with granular progress tracking"""
         paper_id = paper_metadata["id"]
 
@@ -245,12 +233,13 @@ class BatchIngester:
                     self._log_skip(paper_id, "fetch_failed")
                     return False
                 import shutil
+
                 shutil.copy2(paper_data["content"], cached_pdf)
             else:
                 paper_data = {
                     "content": str(cached_pdf),
                     "source_type": "pdf",
-                    "url": f"https://arxiv.org/pdf/{paper_id}.pdf"
+                    "url": f"https://arxiv.org/pdf/{paper_id}.pdf",
                 }
 
             progress.advance(parent_task, 0.4)  # 40% progress
@@ -285,18 +274,15 @@ class BatchIngester:
             self._log_skip(paper_id, "rag_error")
             raise
 
+
 async def main():
     # Example usage
     ingester = BatchIngester()
 
     # Get recent AI papers about LLMs
-    query = '''cat:cs.AI AND submittedDate:[20240101 TO 20241231]'''
+    query = """cat:cs.AI AND submittedDate:[20240101 TO 20241231]"""
 
-    processed = await ingester.ingest_papers(
-        query=query,
-        max_papers=50,
-        batch_size=5
-    )
+    processed = await ingester.ingest_papers(query=query, max_papers=50, batch_size=5)
 
     logger.info(f"Completed ingestion of {processed} papers")
 
@@ -310,6 +296,7 @@ async def main():
                     logger.warning(
                         f"Paper {e['paper_id']} failed in {e['stage']}: {e['error']}"
                     )
+
 
 if __name__ == "__main__":
     asyncio.run(main())

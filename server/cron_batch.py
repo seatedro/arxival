@@ -9,7 +9,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from ingestion.filter import ProcessedPaperTracker
+# from ingestion.filter import ProcessedPaperTracker
 
 log_dir = Path("logs")
 log_dir.mkdir(exist_ok=True)
@@ -49,11 +49,11 @@ async def main():
                         help='Reprocess papers even if already ingested')
 
     # Date range
-    parser.add_argument('--date-from', type=str, help='Start year YYYY')
-    parser.add_argument('--date-to', type=str, help='End year YYYY')
+    parser.add_argument('--date-from', type=str, help='Start year YYYY', default='2013')
+    parser.add_argument('--date-to', type=str, help='End year YYYY', default='2024')
 
     # Query parameters
-    parser.add_argument('--query', type=str, default='machine learning',
+    parser.add_argument('--query', type=str, default='',
                        help='Search query (default: machine learning)')
     parser.add_argument('--field', type=str, default='Computer Science',
                        help='Field of study filter')
@@ -73,10 +73,10 @@ async def main():
     logger.info(f"Query: {args.query}")
     logger.info(f"Field: {args.field}")
     logger.info(f"Min citations: {args.min_citations}")
-    paper_tracker = ProcessedPaperTracker(
-        chromadb_host=CHROMADB_SERVER,
-        chromadb_token=CHROMADB_TOKEN
-    )
+    # paper_tracker = ProcessedPaperTracker(
+    #     chromadb_host=CHROMADB_SERVER,
+    #     chromadb_token=CHROMADB_TOKEN
+    # )
 
     fetcher = SemanticScholarFetcher(
         min_citations=args.min_citations,
@@ -89,11 +89,12 @@ async def main():
     try:
         papers = await fetcher.fetch_papers(
             query=args.query,
+            field=args.field,
             max_results=args.max_papers
         )
 
         if not args.force_reprocess:
-            papers = paper_tracker.filter_new_papers(papers)
+            # papers = paper_tracker.filter_new_papers(papers)
             logger.info(f"Found {len(papers)} new papers to process")
 
             if not papers:
