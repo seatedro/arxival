@@ -14,13 +14,6 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="ArXival API")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.ALLOWED_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["GET"],
-    allow_headers=["*"],
-)
 
 
 @app.exception_handler(Exception)
@@ -60,3 +53,11 @@ async def health_check():
 
 app.include_router(query.router)
 app.include_router(stats.router)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET"],
+    allow_headers=["*"],
+)
